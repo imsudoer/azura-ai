@@ -11,7 +11,8 @@ _inited = False
 
 
 def _suppress_noisy_warnings() -> None:
-    """Silence kurigram/pyrogram deprecations that fire on every forwarded message."""
+    """Silence kurigram/pyrogram deprecations and other library noise."""
+    import logging
     for needle in (
         "message.forward_from",
         "message.forward_from_chat",
@@ -20,6 +21,11 @@ def _suppress_noisy_warnings() -> None:
         "message.forward_date",
     ):
         warnings.filterwarnings("ignore", message=f".*{needle}.*")
+    for name in (
+        "pyrogram", "pyrogram.session", "pyrogram.connection",
+        "pyrogram.dispatcher", "pyrogram.client", "pyrogram.types",
+    ):
+        logging.getLogger(name).setLevel(logging.ERROR)
 
 
 def setup_logging(level: str = "INFO", log_dir: Path | None = None) -> None:

@@ -108,12 +108,15 @@ def primary_file_id(msg: Message, kind: str) -> str | None:
 
 
 def forward_ids(msg: Message) -> tuple[int | None, int | None]:
-    """Return (forward_from_user_id, forward_from_chat_id)."""
-    ff_user = getattr(msg, "forward_from", None)
-    ff_chat = getattr(msg, "forward_from_chat", None)
+    """Return (forward_from_user_id, forward_from_chat_id) using the modern forward_origin API."""
+    origin = getattr(msg, "forward_origin", None)
+    if origin is None:
+        return (None, None)
+    sender_user = getattr(origin, "sender_user", None)
+    sender_chat = getattr(origin, "sender_chat", None) or getattr(origin, "chat", None)
     return (
-        ff_user.id if ff_user is not None else None,
-        ff_chat.id if ff_chat is not None else None,
+        getattr(sender_user, "id", None) if sender_user is not None else None,
+        getattr(sender_chat, "id", None) if sender_chat is not None else None,
     )
 
 
