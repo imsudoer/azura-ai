@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from azura.db.models import MoodState
@@ -17,11 +18,15 @@ class MoodRepo:
     async def get(self) -> MoodState:
         r = await self.s.execute(select(MoodState).where(MoodState.id == 1))
         m = r.scalar_one_or_none()
-        if m is None:
-            m = MoodState(id=1, updated_ts=ts())
-            self.s.add(m)
-            await self.s.flush()
-        return m
+        if m is not None:
+            return m
+        stmt = sqlite_insert(MoodState).values(id=1, updated_ts=ts()).on_conflict_do_nothing(
+            index_elements=[MoodState.id]
+        )
+        await self.s.execute(stmt)
+        await self.s.flush()
+        r = await self.s.execute(select(MoodState).where(MoodState.id == 1))
+        return r.scalar_one()
 
     async def set(
         self,
