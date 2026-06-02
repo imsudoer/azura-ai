@@ -35,7 +35,14 @@ class Reader:
         self.rng = rng
 
     async def cycle(self, *, mood: MoodView, max_chats: int = 6, persona=None) -> int:
-        """One attention pass. Returns the number of chats actually opened."""
+        """Reactive attention: pick AT MOST one candidate, weighted by score+mood+laziness.
+
+        Behaviour:
+          - hard skip if presence is asleep/offline/afk/busy or in sleep window;
+          - draw a single candidate by weighted random over attention scores;
+          - laziness chance (proportional to fatigue / low arousal) → skip entirely;
+          - opens ONE chat, marks read, returns 1 (or 0).
+        """
         cur = await self.presence.current()
         if cur.state in (Presence.ASLEEP, Presence.OFFLINE, Presence.AFK, Presence.BUSY):
             log.info("reader skip: presence={}", cur.state.value)
@@ -49,21 +56,46 @@ class Reader:
                     return 0
             except Exception:
                 pass
-        queue = await self.attention.queue(mood=mood, limit=max_chats)
-        opened = 0
-        for cand in queue:
-            try:
-                att = await self.memory.repos.attention.start(cand.chat_id)
-                await self.memory.repos.s.commit()
-                await self.c.read_chat_history(cand.chat_id)
-                read = await self.memory.repos.messages.mark_seen(cand.chat_id, 10**18)
-                await self.memory.repos.attention.finish(
-                    att.id, msgs_read=read, decided="read",
-                )
-                await self.memory.repos.s.commit()
-                opened += 1
-                await asyncio.sleep(self.rng.uniform(1.5, 6.0))
-            except Exception as e:
-                log.warning("reader failed on chat {}: {}", cand.chat_id, e)
-        await self.memory.repos.s.commit()
-        return opened
+
+        laziness = max(0.0, min(0.9, mood.fatigue * 0.6 + (1.0 - mood.arousal) * 0.4))
+        if self.rng.chance(laziness * 0.5):
+            log.info("reader skip: lazy (fatigue={:.2f} arousal={:.2f})", mood.fatigue, mood.arousal)
+            return 0
+
+        queue = await self.attention.queue(mood=mood, limit=max(8, max_chats))
+        if not queue:
+            return 0
+
+        weights = [max(0.01, getattr(c, "score", 0.5)) for c in queue]
+        total = sum(weights)
+        r = self.rng.uniform(0.0, total)
+        upto = 0.0
+        choice = queue[0]
+        for cand, w in zip(queue, weights, strict=True):
+            upto += w
+            if upto >= r:
+                choice = cand
+                break
+
+        await asyncio.sleep(self.rng.uniform(0.3, 1.6))
+
+        try:
+            att = await self.memory.repos.attention.start(choice.chat_id)
+            await self.memory.repos.s.commit()
+            await self.c.read_chat_history(choice.chat_id)
+            read = await self.memory.repos.messages.mark_seen(choice.chat_id, 10**18)
+            await self.memory.repos.attention.finish(att.id, msgs_read=read, decided="read")
+            await self.memory.repos.s.commit()
+            log.info("reader picked chat={} score={:.2f}", choice.chat_id, getattr(choice, "score", 0.0))
+            return 1
+        except Exception as e:
+            err = str(e).lower()
+            log.warning("reader failed on chat {}: {}", choice.chat_id, e)
+            if "channel_private" in err or "haven't joined" in err or "not a participant" in err:
+                try:
+                    await self.memory.repos.chats.deactivate(choice.chat_id)
+                    await self.memory.repos.s.commit()
+                    log.info("reader: deactivated unreachable chat {}", choice.chat_id)
+                except Exception:
+                    pass
+            return 0

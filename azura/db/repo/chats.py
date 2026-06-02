@@ -55,6 +55,16 @@ class ChatsRepo:
             update(Chat).where(Chat.id == chat_id).values(importance=importance)
         )
 
+    async def deactivate(self, chat_id: int) -> None:
+        """Mark a chat as unreachable (e.g. left, banned, channel_private).
+
+        Uses importance=-100 sentinel so attention.queue can filter it out
+        without a schema change.
+        """
+        await self.s.execute(
+            update(Chat).where(Chat.id == chat_id).values(importance=-100, muted=True)
+        )
+
     async def adjust_opinion(self, chat_id: int, delta: int) -> int:
         c = await self.get(chat_id)
         if c is None:

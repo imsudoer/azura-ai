@@ -29,7 +29,7 @@ class ReaderLoop:
         persona: Persona,
         sessionmaker: async_sessionmaker[AsyncSession],
         rng: Rng,
-        period_s: float = 90.0,
+        period_s: float = 45.0,
     ) -> None:
         self.c = client
         self.p = persona
@@ -76,7 +76,7 @@ class ReaderLoop:
             att = Attention(self.p, r, m)
             reader = Reader(self.c, attention=att, presence=presence, memory=m, rng=self.rng)
             mv = await mood.now()
-            opened = await reader.cycle(mood=mv, max_chats=self.rng.randint(3, 7), persona=self.p)
+            opened = await reader.cycle(mood=mv, max_chats=1, persona=self.p)
             await s.commit()
             if opened:
-                log.info("attention pass: opened {} chats", opened)
+                log.debug("attention pass: opened {} chat(s)", opened)

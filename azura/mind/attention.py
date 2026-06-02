@@ -46,6 +46,8 @@ class Attention:
         chats = await self.r.chats.all_active()
         candidates: list[ChatCandidate] = []
         for c in chats:
+            if c.importance <= -100:
+                continue
             unseen = await self.r.messages.unseen_count(c.id)
             if unseen == 0 and c.last_seen_ts and ts() - c.last_seen_ts > 24 * 3600:
                 continue

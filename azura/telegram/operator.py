@@ -247,7 +247,7 @@ async def _compose_operator_reply(
         "friend_message": user_msg,
         "my_draft_intent": draft_reply,
         "tool_results": results,
-    }, ensure_ascii=False, option=orjson.OPT_INDENT_2).decode()
+    }, option=orjson.OPT_INDENT_2).decode()
     try:
         comp = await think_json(
             [{"role": "system", "content": sys_p}, {"role": "user", "content": usr_p}],
