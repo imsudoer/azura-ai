@@ -220,8 +220,8 @@ class Dispatcher:
             log.info("night dm from operator: AFK={} until={}", reason, wake_until)
         is_operator = bool(msg.from_user and msg.from_user.id == self.s.operator_id)
         if is_operator:
-            from azura.mind.intent import IntentDecision
-            decision = IntentDecision(decision="reply", score=1.0, reason="operator override")
+            from azura.mind.intent import ReplyDecision
+            decision = ReplyDecision(decision="reply", score=1.0, reason="operator override")
             log.info("intent override: operator dm chat={}", msg.chat.id)
         else:
             decision = await intent_eng.decide_reply(
@@ -336,10 +336,12 @@ class Dispatcher:
                             log.warning("send_chat_action failed chat={} err={}", cid, e)
                         await _asyncio.sleep(3.0)
 
+                import random as _random
+
                 def _type_delay_for(text):
                     chars = len(text)
-                    base = max(2.0, min(9.0, chars / 11.0))
-                    return base * (0.85 + (hash(text) % 30) / 100.0)
+                    base = max(0.8, min(4.5, chars / 22.0))
+                    return base * _random.uniform(0.7, 1.3)
 
                 for idx, text in enumerate(msgs):
                     typing_target = resolved_id if resolved_id is not None else target
@@ -360,7 +362,8 @@ class Dispatcher:
                         resolved_id = m.chat.id
                         target = resolved_id
                     if idx + 1 < len(msgs):
-                        gap = max(0.7, min(3.0, len(msgs[idx + 1]) / 60.0))
+                        next_len = len(msgs[idx + 1])
+                        gap = max(0.4, min(2.0, next_len / 80.0)) * _random.uniform(0.6, 1.4)
                         await _asyncio.sleep(gap)
                 if resolved_id is not None:
                     try:

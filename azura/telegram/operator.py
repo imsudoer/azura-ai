@@ -203,14 +203,103 @@ async def _handle_nl(
             res = {"error": f"{type(e).__name__}: {e}"}
         results.append({"tool": name, "args": args, "result": res})
 
-    reply = (out.get("reply") or "").strip()
-    body_lines = []
-    if reply:
-        body_lines.append(reply)
-    for r in results[:6]:
-        body_lines.append(f"• {r['tool']}: {orjson.dumps(r.get('result') or r.get('error') or {}).decode()[:400]}")
-    await client.send_message(msg.chat.id, "\n".join(body_lines)[:3500] or "done.")
+    final_lines = await _compose_operator_reply(
+        ctx, body, out.get("reply") or "", results, friend_first_name,
+    )
+    await _send_with_typing(client, msg.chat.id, final_lines)
+    try:
+        await client.read_chat_history(msg.chat.id)
+    except Exception:
+        pass
     return True
+
+
+async def _compose_operator_reply(
+    ctx: ToolContext, user_msg: str, draft_reply: str,
+    results: list[dict], friend_first_name: str,
+) -> list[str]:
+    """Second LLM pass: turn tool results into a natural multi-message answer."""
+    p = ctx.persona
+    persona_voice = (
+        f"{p.identity.name}, {p.identity.age}, {p.identity.city}. "
+        f"register={p.speech.speech_register}, humor={p.derived.get('humor_style','dry')}, "
+        f"caps={p.speech.uses_caps}, emoji={p.speech.uses_emoji}, punctuation={p.speech.punctuation}. "
+        f"sentence ≈ {p.speech.sentence_length_avg} words."
+    )
+    payload = orjson.dumps(
+        [{"tool": r["tool"], "result": r.get("result") or r.get("error") or {}} for r in results],
+        option=orjson.OPT_INDENT_2,
+    ).decode()[:4000]
+    sys_p = (
+        "You are the persona answering a single trusted friend in his DM. He just asked you to do or look up "
+        "something, and you ran the tools. Now write a short multi-message answer in HER voice. "
+        f"PERSONA: {persona_voice}\n"
+        f"FRIEND_NAME: {friend_first_name}.\n"
+        "Rules:\n"
+        "- NEVER paste raw JSON or tool names or fields like 'items', 'count', 'chat_id'. The friend doesn't see machinery.\n"
+        "- Speak as a person: 'я ей написала', 'пока тихо', 'разобралась'.\n"
+        "- If results are empty (e.g. no messages yet) — say it naturally, in 1-2 short bubbles. Don't pretend something happened.\n"
+        "- Split into 1-4 short messages (Telegram style), as if a real person typing in bursts.\n"
+        "- Match her humor and tone. NO meta-words like 'tool', 'operator', 'AI', 'response_format', 'json'.\n"
+        "Output STRICT JSON: {\"messages\": [\"...\", \"...\"]}."
+    )
+    usr_p = orjson.dumps({
+        "friend_message": user_msg,
+        "my_draft_intent": draft_reply,
+        "tool_results": results,
+    }, ensure_ascii=False, option=orjson.OPT_INDENT_2).decode()
+    try:
+        comp = await think_json(
+            [{"role": "system", "content": sys_p}, {"role": "user", "content": usr_p}],
+            temperature=0.7, max_tokens=600,
+        )
+        msgs = comp.get("messages") or []
+        out = [str(m).strip() for m in msgs if str(m).strip()]
+        if out:
+            return out[:6]
+    except Exception as e:
+        log.warning("compose_operator_reply failed: {}", e)
+    if draft_reply.strip():
+        return [draft_reply.strip()]
+    return ["окей, сделала"]
+
+
+async def _send_with_typing(client: Client, chat_id: int, messages: list[str]) -> None:
+    """Send 1..N messages with realistic typing keepalive and per-message random delays."""
+    from pyrogram.enums import ChatAction
+    import asyncio as _asyncio
+    import random as _random
+    if not messages:
+        return
+
+    async def _keep_typing():
+        while True:
+            try:
+                await client.send_chat_action(chat_id, ChatAction.TYPING)
+            except Exception:
+                pass
+            await _asyncio.sleep(3.0)
+
+    for idx, text in enumerate(messages):
+        text = (text or "").strip()
+        if not text:
+            continue
+        chars = len(text)
+        type_s = max(0.8, min(4.5, chars / 22.0)) * _random.uniform(0.7, 1.3)
+        keep = _asyncio.create_task(_keep_typing())
+        try:
+            await _asyncio.sleep(type_s)
+            await client.send_message(chat_id, text)
+        finally:
+            keep.cancel()
+            try:
+                await keep
+            except BaseException:
+                pass
+        if idx + 1 < len(messages):
+            next_len = len(messages[idx + 1])
+            gap = max(0.4, min(2.0, next_len / 80.0)) * _random.uniform(0.6, 1.4)
+            await _asyncio.sleep(gap)
 
 
 def _fmt_status(r: dict) -> str:

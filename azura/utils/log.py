@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from pathlib import Path
 
 from loguru import logger
@@ -9,11 +10,24 @@ from loguru import logger
 _inited = False
 
 
+def _suppress_noisy_warnings() -> None:
+    """Silence kurigram/pyrogram deprecations that fire on every forwarded message."""
+    for needle in (
+        "message.forward_from",
+        "message.forward_from_chat",
+        "message.forward_signature",
+        "message.forward_sender_name",
+        "message.forward_date",
+    ):
+        warnings.filterwarnings("ignore", message=f".*{needle}.*")
+
+
 def setup_logging(level: str = "INFO", log_dir: Path | None = None) -> None:
     """Configure stderr sink with colors and an optional rotating file sink."""
     global _inited
     if _inited:
         return
+    _suppress_noisy_warnings()
     logger.remove()
     logger.add(
         sys.stderr,
