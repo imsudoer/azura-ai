@@ -1,8 +1,20 @@
 """FTS5 virtual tables and helpers for full-text recall."""
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
+
+_TOK_RE = re.compile(r"\w+", re.UNICODE)
+
+
+def fts_quote(query: str) -> str:
+    """Safely escape a user query for FTS5 MATCH: keep word tokens, quote them."""
+    toks = _TOK_RE.findall(query or "")
+    if not toks:
+        return '""'
+    return " ".join(f'"{t}"' for t in toks)
 
 FTS_TABLES_DDL = (
     """
@@ -61,22 +73,28 @@ async def fts_insert_message(conn: AsyncConnection, message_id: int, chat_id: in
 
 async def fts_search_memory(conn: AsyncConnection, query: str, limit: int = 10) -> list[int]:
     """Return memory ids matching a query, ranked by bm25."""
+    q = fts_quote(query)
+    if q == '""':
+        return []
     r = await conn.execute(
         text(
             "SELECT memory_id FROM memory_fts WHERE memory_fts MATCH :q "
             "ORDER BY bm25(memory_fts) LIMIT :l"
         ),
-        {"q": query, "l": limit},
+        {"q": q, "l": limit},
     )
     return [row[0] for row in r.fetchall()]
 
 
 async def fts_search_episodes(conn: AsyncConnection, query: str, limit: int = 10) -> list[int]:
+    q = fts_quote(query)
+    if q == '""':
+        return []
     r = await conn.execute(
         text(
             "SELECT episode_id FROM episodes_fts WHERE episodes_fts MATCH :q "
             "ORDER BY bm25(episodes_fts) LIMIT :l"
         ),
-        {"q": query, "l": limit},
+        {"q": q, "l": limit},
     )
     return [row[0] for row in r.fetchall()]
