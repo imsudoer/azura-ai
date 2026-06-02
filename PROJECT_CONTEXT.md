@@ -445,7 +445,7 @@ Web tools always wrap themselves in `go_afk` / `come_back` so the persona looks 
 | task-13 | telegram (kurigram app, handlers, readers/senders, online, media_dl, stickers_collector, operator, patches) | done |
 | task-14 | memory consolidator + dreams | done |
 | task-15 | run.py wiring | done |
-| task-16 | tests | todo |
+| task-16 | tests | done |
 | task-17 | README + TODO (voice, vision, multi-account, memory export) | done |
 | task-18 | ubuntu deploy prep | done |
 
@@ -524,6 +524,40 @@ On first start kurigram will ask for phone/code interactively in stdin (it write
   - `install.sh` (one-shot installer; takes REPO_URL, optional APP_ROOT/APP_USER/PYTHON_BIN).
   - `deploy/README.md` (pointer to the top-level DEPLOY.md).
 
-## 20. Still TODO
+## 20. Test suite (task-16 — done)
 
-- **task-16**: tests — unit + humanity + activity + social + integration (mocks for kurigram).
+**96 tests, all green, ~4s wall time.**
+
+Layout:
+
+```
+tests/
+├── conftest.py             # fixtures: per-test sqlite (file path, sqlite-vec needs file), session, repos, MemoryService, persona, Rng(1337)
+├── factories.py            # make_persona(**overrides) — fully-validated Persona for tests
+├── unit/                   # utils (rng, timez, text), db+repos+FTS+vec, persona schema/lock, MemoryService bundles
+├── humanity/               # delays distribution + bounds + urgency/fatigue/night effects; typos+split+style+anti_detect
+├── activity/               # clock phases, MoodEngine drift+nudge+sleep_reset, PresenceEngine auto-sleep/wake/AFK/busy, Attention priority + score, Intent+Triggers stats over 60 seeds
+├── social/                 # opinions clamp, chat aggregate, proximity gating by age, dominant feeling, relationship round-trip, conflict moves
+└── integration/
+    ├── _fakes.py           # FakeClient (records sent_messages/read_history/typing/reactions), FakeUser/FakeChat/FakeMessage, FakePyrogramChatType
+    ├── test_sender.py      # full humanize pipeline against FakeClient: reads, splits, blocks chatbot phrases
+    └── test_dispatcher.py  # end-to-end: incoming Message → record → intent (forced) → agent (mocked) → sender; verifies reply/read-only/asleep paths
+```
+
+Key conventions:
+
+- `pytest-asyncio` is in `auto` mode (set in `pyproject`); the session-scoped `event_loop` fixture is shared.
+- The `db` fixture creates a per-test sqlite file under `tmp_path` and re-runs `init_schema(embed_dim=8)`; it tears down via `dispose_engine()`.
+- Integration tests inject `monkeypatch` to make `asyncio.sleep` a no-op in `azura.humanize.typing` and `azura.telegram.senders`, so humanized flows still execute but in milliseconds.
+- `Agent.run` and `IntentEngine` are monkey-patched in `test_dispatcher.py` (decision and final messages are hard-coded), so dispatcher tests don't call OnlySq.
+- Statistical tests (intent over 60 seeds, delays over 200 samples) verify directionality and spread, not specific magic numbers.
+
+Run the whole suite:
+
+```powershell
+python -m pytest -q
+```
+
+## 21. All tasks closed
+
+Project is feature-complete. Future work: see `TODO.md` (voice, vision-input/gen, multi-account, memory export, reactions, web UI, ageing, periodic self-rewrite, alembic, mypy, prometheus, pre-commit).
