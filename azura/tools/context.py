@@ -29,3 +29,4 @@ class ToolContext:
     media_sender: Callable[[int, str, str], Awaitable[dict]] | None = None
     web_searcher: Callable[[str], Awaitable[list[dict]]] | None = None
     web_fetcher: Callable[[str], Awaitable[str]] | None = None
+    _tg_client: Any = None

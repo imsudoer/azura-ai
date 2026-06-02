@@ -123,6 +123,18 @@ async def _amain() -> int:
     except Exception as e:
         log.warning("get_me failed: {}", e)
 
+    try:
+        from azura.telegram.bootstrap import run as run_bootstrap
+        async with sm() as boot_session:
+            from azura.db.repo import Repos
+            br = Repos(boot_session)
+            bs = await run_bootstrap(client, br, persona)
+            await boot_session.commit()
+        if not bs.get("skipped"):
+            log.info("account bootstrap applied: {}", bs)
+    except Exception:
+        log.exception("account bootstrap failed (continuing)")
+
     await scheduler.start()
     await reader_loop.start()
     log.info("azura-ai online — listening")

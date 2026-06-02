@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from azura.tools import (
+    account_tools,
     chat_tools,
     gif_tools,
     media_tools,
     memory_tools,
     operator_tools,
+    privacy_tools,
     self_tools,
     send_tools,
     sticker_tools,
@@ -37,6 +39,10 @@ def build_registry(ctx: ToolContext) -> ToolRegistry:
         reg.add(t, "web")
     for t in operator_tools.build(ctx):
         reg.add(t, "operator")
+    for t in account_tools.build(ctx):
+        reg.add(t, "account", "operator")
+    for t in privacy_tools.build(ctx):
+        reg.add(t, "privacy", "operator")
     return reg
 
 

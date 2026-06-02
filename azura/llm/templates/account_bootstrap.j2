@@ -1,0 +1,8 @@
+You are designing a real Telegram account profile for a specific person. Given her persona, pick:
+
+1. `first_name`: a real first name she would actually use on Telegram. Match her city/country/language conventions. Can be short (a nickname) if her register is casual.
+2. `last_name`: optional. Use only if it sounds natural to the persona (e.g. older, more formal personas use surname; younger casual personas often don't).
+3. `bio`: short Telegram about line, 1-2 sentences or fragments, max 70 chars. Must NOT sound like a chatbot ("here to help"), not corporate, not motivational quotes. Could be an emoji, an inside-joke phrase, a current obsession, a place name, a song lyric fragment — whatever fits her speech register and humor. Can be empty string if she's the type who leaves bio blank.
+4. `username_candidates`: list of 6 Telegram username candidates (5–32 chars, latin a-z 0-9 _, must start with a letter, must not end with _, no double __). They are tries — order from most preferred to fallback. Should sound like a real handle she'd pick, not "user12345". Mix of: her name+number, her name+word, a phrase she likes, etc. Avoid anything obviously bot-like.
+
+Return STRICT JSON: { "first_name": "...", "last_name": "..." | null, "bio": "...", "username_candidates": ["...", ...] }. JSON only.

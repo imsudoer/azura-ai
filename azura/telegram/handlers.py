@@ -283,6 +283,7 @@ class Dispatcher:
             conflict=conflict, tails=tails,
             chat_id=msg.chat.id if msg and msg.chat else None,
             user_id=msg.from_user.id if msg and msg.from_user else None,
+            _tg_client=client,
         )
         if partial:
             return ctx

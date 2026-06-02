@@ -449,6 +449,12 @@ Web tools always wrap themselves in `go_afk` / `come_back` so the persona looks 
 | task-16 | tests | done |
 | task-17 | README + TODO (voice, vision, multi-account, memory export) | done |
 | task-18 | ubuntu deploy prep | done |
+| task-19 | Account management (profile/username/about/photo + privacy general+per-user + block/unblock) | done |
+| task-20 | Operator dual-mode (slash + LLM NL command classifier with tool dispatch) | done |
+| task-21 | Perfect chat history Level B (chat_archive, media cache, vision, edit/delete/reaction, reply-chain, album collapse) | done |
+| task-22 | First-start account bootstrap (names, bio, username candidates) | done |
+| task-23 | Imagen portrait generator (realistic-photo prompts, anti-AI-tells) | done |
+| task-24 | Login CLI (`azura.login`) | done |
 
 ---
 
@@ -559,6 +565,80 @@ Run the whole suite:
 python -m pytest -q
 ```
 
-## 21. All tasks closed
+## 21. Account management, privacy, blocks (task-19 — done)
 
-Project is feature-complete. Future work: see `TODO.md` (voice, vision-input/gen, multi-account, memory export, reactions, web UI, ageing, periodic self-rewrite, alembic, mypy, prometheus, pre-commit).
+- `azura/telegram/account.py` — thin wrappers over kurigram: `update_profile`, `set_username` (with availability check), `set_profile_photo`, `delete_profile_photos`, `block` / `unblock` / `blocked_list`, `set_privacy(key, base, allow_users, disallow_users)` using `account.SetPrivacy` raw call so per-user overrides actually work, `get_privacy`.
+- `azura/tools/account_tools.py` — agent-tools: `update_profile`, `set_username`, `set_profile_photo`, `delete_profile_photos`, `block_user`, `unblock_user`, `list_blocked`. All require `_tg_client` on the ToolContext.
+- `azura/tools/privacy_tools.py` — `set_privacy_general`, `hide_from_user`, `show_to_user`, `reset_user_override`, `show_privacy`. State persisted in `kv` under `privacy:<category>`.
+- All account/privacy tools tagged `operator` — they are excluded from the default tool subset so a normal reply turn cannot accidentally trigger them.
+- 14 privacy keys supported (status / last_seen, profile_photo, about, forwards, phone_number, phone_call, phone_p2p, added_by_phone, chat_invite, voice_messages, birthday).
+
+## 22. Operator dual-mode (task-20 — done)
+
+`azura/telegram/operator.py`:
+
+- **Slash interface** (unchanged): `<OPERATOR_SECRET> status / sleep / wake / journal [N] / pause / resume / rebootstrap / regen_portrait / set_name X / set_username X / ban N / unban N`.
+- **Natural-language interface** (NEW): every other DM from OPERATOR_ID is fed to `MODEL_THINK` via `operator_intent.j2` which classifies `kind = command | chat` and emits tool calls.
+  - `kind = command` → dispatcher executes the calls against the full ToolRegistry (operator-tagged tools included) and replies with results.
+  - `kind = chat` → operator handler returns False, the regular Dispatcher cycle answers as persona (so you can chat with her normally from your own DM).
+- Tool catalog is rendered fresh into the system prompt every time, so when new tools are added the operator can use them in NL.
+- Examples that work out of the box:
+  - «напиши @egor: пойдём в кино» → send_messages with username resolution.
+  - «забань 12345» → block_user.
+  - «поставь last seen для @alice как 'recently'» → hide_from_user(category="status", user_id=...).
+  - «измени био на 'home is where the cat is'» → update_profile.
+  - «перегенерируй аватарку» → regen_portrait (or `<SECRET> regen_portrait`).
+  - «что там по настроению?» → op_status.
+  - «как прошёл день?» → classified as chat → normal persona reply.
+
+## 23. Perfect chat history Level B (task-21 — done)
+
+- **Two-table architecture**:
+  - `messages` — hot ring buffer (default keep=2000), reply-chain-safe trim that never deletes rows referenced by surviving rows.
+  - `chat_archive` — never-trimmed, FTS5-indexed full history with rich metadata.
+- **Message model extended** with: `media_group_id`, `edited_ts`, `deleted_ts`, `forward_from_id`, `forward_from_chat_id`, `reactions` (JSON), wider `meta`.
+- **`ChatArchive`** new table: text, caption, description (vision), reply_to, is_self, media_group_id, forward source, full `media` JSON (file_id, file_unique_id, size, mime, duration, w/h, set_name/emoji for stickers, performer/title for audio, latitude/longitude for location, options for poll), `local_path` (disk-cached copy), `service_kind`, full edit-history in `meta.edits`.
+- **Disk media cache** (`azura/telegram/media_cache.py`): downloads every observed media into `data/media_cache/{chat_id}/{tg_msg_id}.{ext}` with `MEDIA_MAX_DOWNLOAD_MB` size cap; LRU eviction enforces `MEDIA_CACHE_MAX_MB` ceiling, called from the forgetting loop.
+- **Vision descriptions** (`azura/llm/vision.py`): if `VISION_ENABLED=true` + `MODEL_VISION` set, every cached photo/sticker gets a 1-2 sentence English description from the vision model. The description is also re-indexed into FTS so semantic search across photos works.
+- **Edit / delete / reaction handlers** registered alongside `MessageHandler`:
+  - `EditedMessageHandler` → updates text + appends prior version to `meta.edits`.
+  - `DeletedMessagesHandler` → sets `deleted_ts` (never removes the row from archive).
+  - `MessageReactionHandler` → persists the latest reaction set.
+- **Reply-chain resolver**: `ArchiveRepo.reply_chain(chat_id, tg_msg_id, max_depth=5)` walks ancestors oldest-first; injected into the agent prompt under `incoming.reply_chain` so the persona knows what message was being answered.
+- **Album collapse**: consecutive same-`media_group_id` rows in the timeline are summarized as a single entry with `album_size` so prompts aren't cluttered with 4 "photo" lines for one album.
+- `reply_formatter.build_user_prompt` now bundles `timeline_tail` (last 25 archive rows, albums collapsed) on top of the existing memory recall — the agent now sees the actual chat surface, not just summarized memory.
+
+## 24. First-start account bootstrap (task-22 — done)
+
+`azura/telegram/bootstrap.py`:
+
+- `needs_bootstrap(client, repos, force)` — true if `kv[bootstrap.done]` is missing, OR first_name is empty/default, OR no profile photos.
+- `generate_names(persona)` — prompts `MODEL_THINK` via `account_bootstrap.j2` for first_name / last_name (optional) / bio (≤ 70 chars, persona-voiced) / 6 username candidates.
+- `_apply_names(client, names)` — calls `update_profile(first/last/bio)`, walks username candidates calling `check_username` and `set_username` until one is free.
+- `generate_and_set_photo(client, persona)` — see task-23.
+- `run(client, repos, persona, force=False, skip_photo=False)` — full flow; persists chosen names in `kv[bootstrap.names]`, photo result in `kv[bootstrap.photo]`, and a `kv[bootstrap.done]` flag with the full payload.
+- Wired into `azura/run.py` right after `client.start()` and before scheduler/reader loops, so the very first run sets up the account automatically.
+- Operator can re-run via `<SECRET> rebootstrap` or trigger only a new portrait via `<SECRET> regen_portrait`.
+
+## 25. Realistic photo generator (task-23 — done)
+
+`azura/llm/imagen.py`:
+
+- Calls OnlySq's OpenAI-compatible `images.generate` with `model = MODEL_IMAGEN` (default `imagen-4`).
+- Returns local `Path[]`. Supports both `b64_json` and `url` response payloads. Saves into `data/media_cache/portraits/portrait_{ts}_{i}.png`.
+
+`azura/llm/templates/portrait_prompt.j2`:
+
+- Specialized prompt-builder template fed to `MODEL_THINK`.
+- Hard rules: real photograph (no render/anime/illustration), real device-specific camera+lens (iPhone 14 Pro / Sony A7IV+50mm / X100V / Canon R6+35mm), natural light source, candid (not studio), real human imperfections (pore-level skin texture, mild asymmetry, single blemish), specific particulars (hair/eye/skin/clothing anchored to persona's city+season), forbidden words ("8k", "masterpiece", "trending on artstation", "plastic skin", etc.) and forbidden AI-tells (extra fingers, melted hands, garbled text, glowing eyes, doll proportions).
+- Output strict JSON `{prompt, negative}`; the negative is appended after `NEGATIVE:` because not all OnlySq imagen variants accept a structured negative_prompt field.
+- `build_portrait_prompt(persona)` runs this template, `generate_and_set_photo()` then calls `imagen.generate()` and pipes the first result through `account.set_profile_photo()`.
+
+## 26. Login CLI (task-24 — done)
+
+- `azura/login.py` — dedicated interactive Telegram first-login. `python -m azura.login` or `azura-login`. Writes `data/session.session`. Idempotent: verifies an existing session and prints the account info.
+- Registered as a console script. Recommended order: `init_personality → login → run`.
+
+## 27. All tasks closed (so far)
+
+The project is now feature-complete for the agreed scope. Open follow-ups stay in `TODO.md`.
