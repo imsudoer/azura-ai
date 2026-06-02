@@ -20,6 +20,6 @@ while read oldrev newrev refname ; do
   fi
   if systemctl is-active --quiet azura ; then
     echo "[hook] restarting azura.service"
-    systemctl restart azura
+    sudo -n /bin/systemctl restart azura || echo "[hook] restart failed (no sudo); restart manually"
   fi
 done

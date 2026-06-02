@@ -287,20 +287,32 @@ class Dispatcher:
         )
         if partial:
             async def _direct_sender(chat_id, messages, opts):
+                from pyrogram.enums import ChatAction
+                import asyncio as _asyncio
                 target = chat_id
                 if isinstance(target, str) and not target.lstrip("-").isdigit():
                     target = target.lstrip("@")
                 sent = 0
                 last_id = None
-                resolved_id = None
-                for text in messages:
+                resolved_id: int | None = None
+                for idx, text in enumerate(messages):
                     if not text:
                         continue
+                    typing_target = resolved_id if resolved_id is not None else target
+                    try:
+                        await client.send_chat_action(typing_target, ChatAction.TYPING)
+                    except Exception:
+                        pass
+                    type_s = max(0.6, min(3.0, len(text) / 30.0))
+                    await _asyncio.sleep(type_s)
                     m = await client.send_message(target, text)
                     sent += 1
                     last_id = getattr(m, "id", None)
                     if resolved_id is None and m and getattr(m, "chat", None):
                         resolved_id = m.chat.id
+                        target = resolved_id
+                    if idx + 1 < len(messages):
+                        await _asyncio.sleep(0.6)
                 if resolved_id is not None:
                     try:
                         await client.read_chat_history(resolved_id)
