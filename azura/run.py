@@ -1,4 +1,5 @@
 """Entry point: boots DB, persona, mind, telegram, scheduler, runs forever."""
+
 from __future__ import annotations
 
 import asyncio
@@ -33,11 +34,15 @@ async def _amain() -> int:
     log.info("azura-ai starting up")
 
     if not s.onlysq_api_key:
-        log.warning("ONLYSQ_API_KEY is empty — LLM calls will fail until you set it in .env")
+        log.warning(
+            "ONLYSQ_API_KEY is empty — LLM calls will fail until you set it in .env"
+        )
 
     if not s.personality_path.exists():
-        log.error("personality file missing: {}. Run: python -m azura.init_personality --interactive",
-                  s.personality_path)
+        log.error(
+            "personality file missing: {}. Run: python -m azura.init_personality --interactive",
+            s.personality_path,
+        )
         return 2
 
     try:
@@ -45,8 +50,12 @@ async def _amain() -> int:
     except Exception as e:
         log.error("persona load failed: {}", e)
         return 3
-    log.info("persona loaded: {} ({} {})", persona.identity.name,
-             persona.identity.age, persona.identity.gender)
+    log.info(
+        "persona loaded: {} ({} {})",
+        persona.identity.name,
+        persona.identity.age,
+        persona.identity.gender,
+    )
 
     init_engine(s.db_path)
     await init_schema(embed_dim=s.embed_dim)
@@ -69,7 +78,9 @@ async def _amain() -> int:
         backpressure=bp,
         style=style,
         mood_engine_factory=lambda p, m, *, rng: MoodEngine(p, m, rng=rng),
-        presence_engine_factory=lambda p, m, *, rng: PresenceEngine(p, m, rng=rng, tg_client=client),
+        presence_engine_factory=lambda p, m, *, rng: PresenceEngine(
+            p, m, rng=rng, tg_client=client
+        ),
     )
     register(dispatcher, client)
 
@@ -80,27 +91,38 @@ async def _amain() -> int:
             from azura.db.repo import Repos
             from azura.memory.service import MemoryService
             from azura.mind.clock import snapshot as _snap
-            r = Repos(session); m = MemoryService(r)
+
+            r = Repos(session)
+            m = MemoryService(r)
             mood_view = await MoodEngine(persona, m, rng=rng).now()
             clk = _snap(persona)
             from azura.telegram.senders import Sender
-            sender = Sender(client, persona=persona, memory=m, rng=rng,
-                            backpressure=bp, style=style)
-            await sender.send(chat_id, [text], mood=mood_view, clock=clk,
-                              in_private=True, urgency=0.1)
+
+            sender = Sender(
+                client, persona=persona, memory=m, rng=rng, backpressure=bp, style=style
+            )
+            await sender.send(
+                chat_id, [text], mood=mood_view, clock=clk, in_private=True, urgency=0.1
+            )
             await session.commit()
 
     async def on_status(state: str) -> None:
         async with sm() as session:
             from azura.db.repo import Repos
             from azura.memory.service import MemoryService
-            r = Repos(session); m = MemoryService(r)
+
+            r = Repos(session)
+            m = MemoryService(r)
             view = await PresenceEngine(persona, m, rng=rng).current()
             await push_status(client, view)
 
     scheduler = MindScheduler(
-        persona=persona, sessionmaker=sm, rng=rng, tails=tails,
-        on_tail=on_tail, on_status=on_status,
+        persona=persona,
+        sessionmaker=sm,
+        rng=rng,
+        tails=tails,
+        on_tail=on_tail,
+        on_status=on_status,
     )
     reader_loop = ReaderLoop(client=client, persona=persona, sessionmaker=sm, rng=rng)
 
@@ -118,15 +140,21 @@ async def _amain() -> int:
     await client.start()
     try:
         me = await client.get_me()
-        log.info("telegram session up: id={} name={} username={}",
-                 me.id, me.first_name, me.username)
+        log.info(
+            "telegram session up: id={} name={} username={}",
+            me.id,
+            me.first_name,
+            me.username,
+        )
     except Exception as e:
         log.warning("get_me failed: {}", e)
 
     try:
         from azura.telegram.bootstrap import run as run_bootstrap
+
         async with sm() as boot_session:
             from azura.db.repo import Repos
+
             br = Repos(boot_session)
             bs = await run_bootstrap(client, br, persona)
             await boot_session.commit()
@@ -140,8 +168,12 @@ async def _amain() -> int:
             from azura.db.repo import Repos as _R
             from azura.memory.service import MemoryService as _M
             from azura.telegram.tg_presence import apply_to_telegram as _apply
-            _r = _R(_boot_s); _m = _M(_r)
-            _cur = await PresenceEngine(persona, _m, rng=rng, tg_client=client).current()
+
+            _r = _R(_boot_s)
+            _m = _M(_r)
+            _cur = await PresenceEngine(
+                persona, _m, rng=rng, tg_client=client
+            ).current()
             await _apply(client, _cur.state)
     except Exception:
         log.exception("failed to push initial presence to telegram")
@@ -152,11 +184,13 @@ async def _amain() -> int:
         async with sm() as ks:
             from azura.db.repo import Repos as _R2
             from azura.memory.service import MemoryService as _M2
-            _r2 = _R2(ks); _m2 = _M2(_r2)
+
+            _r2 = _R2(ks)
+            _m2 = _M2(_r2)
             v = await PresenceEngine(persona, _m2, rng=rng).current()
             return v.state
 
-    presence_keeper = PresenceKeeper(client, _get_state, interval_s=25.0)
+    presence_keeper = PresenceKeeper(client, _get_state, interval_s=10.0)
     await presence_keeper.start()
 
     await scheduler.start()
