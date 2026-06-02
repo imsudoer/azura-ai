@@ -54,10 +54,11 @@ copy .env.example .env
 # open .env and set ONLYSQ_API_KEY=...
 
 python -m azura.init_personality --interactive
+python -m azura.login           # one-time interactive Telegram login
 python -m azura.run
 ```
 
-On the first run, kurigram will ask for phone/code interactively in the terminal — that creates `data/session.session`. Subsequent runs are silent.
+`azura.login` does the phone/code/2FA dance once and writes `data/session.session`. After that `azura.run` starts silently. Re-running `azura.login` on an existing session just verifies it.
 
 ## Quick start (Linux)
 
@@ -70,6 +71,7 @@ cp .env.example .env
 # edit .env
 
 python -m azura.init_personality --interactive
+python -m azura.login
 python -m azura.run
 ```
 
@@ -104,6 +106,7 @@ python -m azura.init_personality --auto                 # no questions, fully ra
 python -m azura.init_personality --critic 2             # 2 critic passes (1 by default)
 python -m azura.init_personality --seed 12345           # explicit RNG seed
 python -m azura.init_personality --overwrite            # skip confirmation
+python -m azura.login                                   # one-time interactive TG login (writes session)
 python -m azura.run                                     # boot the persona
 ```
 

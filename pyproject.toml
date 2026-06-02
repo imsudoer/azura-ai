@@ -43,6 +43,7 @@ dev = [
 [project.scripts]
 azura = "azura.run:main"
 azura-init = "azura.init_personality:main"
+azura-login = "azura.login:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

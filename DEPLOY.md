@@ -76,14 +76,13 @@ sudo chmod 600 /opt/azura/app/data/personality.json /opt/azura/app/data/personal
 
 ## 6. First Telegram login (one-shot)
 
-Kurigram asks for the phone number, code and (if enabled) 2FA password the first time. Do this once interactively:
+Use the dedicated login CLI — it does only the phone/code/2FA dance and exits, no scheduler/loops spinning up.
 
 ```bash
-sudo -u azura -H bash -lc "cd /opt/azura/app && .venv/bin/python -m azura.run"
-# answer prompts, then Ctrl+C after you see "azura-ai online — listening"
+sudo -u azura -H bash -lc "cd /opt/azura/app && .venv/bin/python -m azura.login"
 ```
 
-After this `/opt/azura/app/data/session.session` exists and subsequent runs are silent. Lock it down:
+After this `/opt/azura/app/data/session.session` exists and subsequent runs are silent. The same command is idempotent: re-running on a valid session just verifies it and prints the active account info. Lock it down:
 
 ```bash
 sudo chmod 600 /opt/azura/app/data/session.session

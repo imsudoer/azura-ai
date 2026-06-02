@@ -56,8 +56,8 @@ Next steps:
   1) Edit secrets: $APP_ROOT/.env
   2) Generate persona (interactive):
        sudo -u $APP_USER -H bash -lc "cd $APP_ROOT && .venv/bin/python -m azura.init_personality --interactive"
-  3) First Telegram login (interactive — answer phone/code/2FA, then Ctrl+C):
-       sudo -u $APP_USER -H bash -lc "cd $APP_ROOT && .venv/bin/python -m azura.run"
+  3) First Telegram login (interactive — answer phone/code/2FA):
+       sudo -u $APP_USER -H bash -lc "cd $APP_ROOT && .venv/bin/python -m azura.login"
   4) Start the service:
        sudo systemctl start azura
        sudo systemctl status azura
