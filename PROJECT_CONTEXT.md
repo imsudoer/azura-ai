@@ -156,7 +156,18 @@ azura-ai/
 │   │   ├── web_tools.py          # web_search/web_fetch (wrapped in AFK)
 │   │   └── operator_tools.py     # op_status/op_force_sleep/op_force_wake/op_journal
 │   │
-│   └── telegram/                 # TBD (task-13)
+│   └── telegram/
+│       ├── app.py                # make_client(settings) → kurigram Client (userbot)
+│       ├── patches.py            # apply() patches kurigram (get_peer_type)
+│       ├── online.py             # push_status(client, presence_view) via account.UpdateStatus RPC
+│       ├── senders.py            # Sender: pre_read → typing → typos → multi-message → backpressure → anti-detect
+│       ├── readers.py            # Reader.cycle(mood): walks attention.queue() reading chats in tier order
+│       ├── media_dl.py           # download(url) → media_cache (size cap, scheme allow-list, SSRF private-IP guard)
+│       ├── stickers_collector.py # StickersCollector: persist file_id, LLM-tag mood/desc/fits_persona
+│       ├── operator.py           # handle(msg, ctx, settings): TG id + secret prefix; commands: status/sleep/wake/journal/pause/resume
+│       ├── reply_formatter.py    # build_user_prompt(memory, chat, user, trigger) — JSON situation for agent
+│       └── handlers.py           # Dispatcher: per-chat lock + fresh AsyncSession; record→trigger→intent→agent→sender
+│
 │
 ├── data/                         # gitignored runtime
 │   ├── state.db                  # sqlite (WAL)
@@ -431,7 +442,7 @@ Web tools always wrap themselves in `go_afk` / `come_back` so the persona looks 
 | task-10 | mind (clock/mood/presence/attention/intent/triggers/inner_voice/conflict/tails/life_events/household/social_graph/agent/scheduler) | done |
 | task-11 | humanize (delays/typing/typos/splitter/style/anti-detect/backpressure) | done |
 | task-12 | tools (registry + 9 families, 32 tools) | done |
-| task-13 | telegram (kurigram app, handlers, readers/senders, online, media_dl, stickers_collector, operator, patches) | **in progress** |
+| task-13 | telegram (kurigram app, handlers, readers/senders, online, media_dl, stickers_collector, operator, patches) | done |
 | task-14 | memory consolidator + dreams | todo |
 | task-15 | run.py wiring | todo |
 | task-16 | tests | todo |
@@ -450,19 +461,23 @@ Web tools always wrap themselves in `go_afk` / `come_back` so the persona looks 
 
 ---
 
-## 16. What's next (task-13 — telegram)
+## 16. Telegram layer (task-13 — done)
 
-Plan for the next block:
+Key points:
 
-1. `telegram/app.py` — kurigram `Client` factory (userbot, no bot token), session at `data/session.session`.
-2. `telegram/patches.py` — re-introduce the `get_peer_type` patch if/when needed.
-3. `telegram/handlers.py` — on_message for private/group/channel; route into a per-chat queue; record into `messages`+FTS; trigger detection; intent decision; agent run; sticker/gif autocollect.
-4. `telegram/readers.py` — implements the priority queue read pass: walk `attention.queue()` in order, call `client.read_history(chat_id)` with human-like gaps between chats; respects `Presence` (no reads if asleep/offline).
-5. `telegram/senders.py` — implements `sender(chat_id, messages, opts)` using humanize: delays, typing chunks, typos+correction, multi-burst, backpressure, anti-detect sanitize, style diversity.
-6. `telegram/online.py` — controls userbot online status (`update_status`/typing presence) tied to `PresenceEngine`.
-7. `telegram/media_dl.py` — direct-URL download (httpx, size cap, scheme allowlist, no private IPs) → send as `Photo`/`Video`/`Document`.
-8. `telegram/stickers_collector.py` — when a sticker/GIF is observed, persist file_id, queue an async LLM tag pass that updates description/tags/mood/fits_persona, and (optionally) downloads thumbnail.
-9. `telegram/operator.py` — message filter `user_id == OPERATOR_ID and text.startswith(OPERATOR_SECRET)`; small command parser (`status`, `pause`, `resume`, `journal`, `sleep`, `wake`, `dump <chat>`); uses operator_tools.
-10. Wire `ToolContext` callables to all of the above so the agent can actually do things.
+- `telegram/handlers.py::Dispatcher` is bound via `MessageHandler(dispatcher.on_message, filters.all)`. It uses a **per-chat asyncio.Lock** so handler runs for the same chat serialize.
+- Each dispatch opens a **fresh AsyncSession** from the shared `async_sessionmaker`, builds a `Repos` + `MemoryService` against it, and commits once at the end.
+- Persisted first (always), then operator-handle shortcut, then mind/intent decision, then optional agent.run with tools, then Sender.
+- Sender does: anti-detect sanitize → split_reply → typos → typing-keepalive ticks → per-message backpressure → optional `*word` corrections → after-send pause.
+- Reader.cycle obeys `Presence`: no reads when asleep/offline/afk; otherwise walks the priority queue with 1.5–6s gaps between chats and calls `client.read_chat_history(chat_id)`.
+- `media_dl.send_url(client, chat_id, url, kind)`: streams URL → temp file with size+scheme+SSRF guards, then sends as photo/video/animation/document by extension when `kind=auto`.
+- `stickers_collector` triggers on `msg.sticker` / `msg.animation`, persists file_id and queues an async LLM tag pass that fills tags/desc/mood/fits_persona.
+- `operator.handle` accepts only DMs from `OPERATOR_ID`, body must start with `OPERATOR_SECRET`. Commands: `status`, `sleep`, `wake`, `journal [N]`, `pause`, `resume`.
+- `web_impl.py` (in `tools/`): DDG html search + safe `fetch_text` (SSRF guard); both are wrapped by `web_tools` in `go_afk`/`come_back` so the persona looks visibly busy.
 
-After telegram is in: **task-14** (consolidator + dreams), **task-15** (run.py), **task-16** (tests), **task-17/18** docs and deploy.
+## 17. What's next
+
+- **task-14**: `memory/consolidator.py` (summarize short→long, opinions/feelings nightly recalc) + `memory/dreams.py` (LLM dream pass: rewrite, forget, re-rank, journal).
+- **task-15**: `azura/run.py` — boot: load .env, init DB+schema, ensure_immutable persona, build engines, build Dispatcher + Reader + MindScheduler, register handlers, start client, wait for shutdown.
+- **task-16**: tests — unit + humanity + activity + social + integration (mocks for kurigram).
+- **task-17/18**: README rewrite + deploy notes (Ubuntu, systemd service, journald, env management).
