@@ -186,9 +186,6 @@ class Dispatcher:
         clk = snapshot(self.p)
         mood = await mood_eng.now()
         presence = await presence_eng.current()
-        if presence.state.value in ("asleep", "offline"):
-            await session.commit()
-            return
 
         me = await client.get_me()
         own_username = me.username
@@ -196,8 +193,21 @@ class Dispatcher:
         reply_to_self = bool(msg.reply_to_message and msg.reply_to_message.from_user
                              and msg.reply_to_message.from_user.id == me.id)
         trig = detect(persona=self.p, text=text, own_username=own_username, reply_to_self=reply_to_self)
-
         in_private = chat_kind in (ChatKind.PRIVATE.value, ChatKind.BOT.value)
+
+        if presence.state.value in ("asleep", "offline"):
+            is_operator = bool(msg.from_user and msg.from_user.id == self.s.operator_id)
+            if not is_operator:
+                await session.commit()
+                return
+            from azura.constants import Presence as _P
+            from azura.utils.timez import ts as _ts
+            wake_until = _ts() + self.rng.randint(20 * 60, 45 * 60)
+            presence = await presence_eng.set(
+                _P.ONLINE, reason="woke up: operator dm", until_ts=wake_until,
+            )
+            log.info("temp wakeup chat={} user={} reason=operator",
+                     msg.chat.id, msg.from_user.id if msg.from_user else None)
         decision = await intent_eng.decide_reply(
             chat_id=msg.chat.id,
             from_user_id=(msg.from_user.id if msg.from_user else None),

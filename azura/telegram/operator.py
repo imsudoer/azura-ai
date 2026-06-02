@@ -152,11 +152,13 @@ async def _handle_nl(
     client: Client, msg: Message, body: str, *, ctx: ToolContext, settings: Settings
 ) -> bool:
     """LLM-classify the message as command-or-chat; if command, run tool calls."""
+    friend_first_name = (msg.from_user.first_name or "друг").strip() if msg.from_user else "друг"
     sys = render(
         "operator_intent.j2",
         tool_catalog=_tool_catalog(ctx),
         current_chat_id=msg.chat.id,
         operator_id=settings.operator_id,
+        friend_first_name=friend_first_name,
     )
     try:
         out = await think_json(
