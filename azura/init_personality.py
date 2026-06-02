@@ -104,16 +104,17 @@ async def _run(hints: dict[str, Any], *, critic: int, overwrite: bool) -> int:
     if not s.onlysq_api_key:
         C.print("[red]ONLYSQ_API_KEY is empty in .env — fill it and re-run.[/red]")
         return 2
+    yes_mode = bool(hints.pop("_yes", False))
     if s.personality_path.exists() and not overwrite:
         C.print(f"[yellow]Persona already exists at {s.personality_path}.[/yellow]")
-        if not Confirm.ask("Overwrite?", default=False):
+        if not (yes_mode or Confirm.ask("Overwrite?", default=False)):
             return 1
 
     C.print("[dim]Asking the model to design a persona... this can take a minute.[/dim]")
     p = await generate(hints, critic_passes=critic)
     _show_summary(p)
 
-    if not overwrite and not Confirm.ask("Save this persona as immutable?", default=True):
+    if not overwrite and not yes_mode and not Confirm.ask("Save this persona as immutable?", default=True):
         C.print("[yellow]Aborted.[/yellow]")
         return 1
 
@@ -129,8 +130,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--auto", action="store_true", help="non-interactive, random persona")
     ap.add_argument("--interactive", action="store_true", help="interactive mode (default)")
     ap.add_argument("--overwrite", action="store_true", help="skip overwrite confirmation")
+    ap.add_argument("--yes", action="store_true", help="assume 'yes' to every confirm prompt (use with --auto)")
     ap.add_argument("--critic", type=int, default=1, help="critic passes (0 to skip)")
     ap.add_argument("--seed", type=int, default=None, help="explicit RNG seed")
+    ap.add_argument("--name", type=str, default=None)
+    ap.add_argument("--gender", choices=["f", "m", "nb"], default=None)
+    ap.add_argument("--age", type=int, default=None)
+    ap.add_argument("--city", type=str, default=None)
+    ap.add_argument("--country", type=str, default=None)
+    ap.add_argument("--timezone", type=str, default=None)
+    ap.add_argument("--occupation", type=str, default=None)
+    ap.add_argument("--languages", type=str, default=None, help="comma-separated ISO codes")
+    ap.add_argument("--vibe", type=str, default=None)
+    ap.add_argument("--notes", type=str, default=None)
     args = ap.parse_args(argv)
 
     interactive = args.interactive or not args.auto
@@ -141,6 +153,14 @@ def main(argv: list[str] | None = None) -> int:
         hints.update(_interactive_hints())
     else:
         hints.setdefault("languages", ["ru"])
+    for k in ("name", "gender", "age", "city", "country", "timezone", "occupation", "vibe", "notes"):
+        v = getattr(args, k, None)
+        if v not in (None, ""):
+            hints[k] = v
+    if args.languages:
+        hints["languages"] = [x.strip().lower() for x in args.languages.split(",") if x.strip()]
+    if args.yes:
+        hints["_yes"] = True
 
     return asyncio.run(_run(hints, critic=args.critic, overwrite=args.overwrite))
 
