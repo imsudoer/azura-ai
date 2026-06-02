@@ -446,8 +446,8 @@ Web tools always wrap themselves in `go_afk` / `come_back` so the persona looks 
 | task-14 | memory consolidator + dreams | done |
 | task-15 | run.py wiring | done |
 | task-16 | tests | todo |
-| task-17 | README + TODO (voice, vision, multi-account, memory export) | todo |
-| task-18 | ubuntu deploy prep | todo |
+| task-17 | README + TODO (voice, vision, multi-account, memory export) | done |
+| task-18 | ubuntu deploy prep | done |
 
 ---
 
@@ -514,8 +514,16 @@ python -m azura.run
 
 On first start kurigram will ask for phone/code interactively in stdin (it writes `data/session.session`). Subsequent starts use the saved session.
 
-## 19. Still TODO
+## 19. Docs + deploy (task-17 + task-18 — done)
+
+- **README.md** — full intro: what makes it not feel like a bot, project layout, quick-start (Win/Linux), config keys, CLI flags, operator commands, immutability, on-disk layout, troubleshooting.
+- **TODO.md** — roadmap: near-term (tests, vision-input, sticker thumbnails, operator extensions, read-no-reply backoff), mid-term (voice, vision-gen, reactions, translator act), long-term (multi-account, memory export/import, web UI, cluster, ageing, periodic self-rewrite), DX (alembic, mypy, pre-commit, prometheus).
+- **DEPLOY.md** — Ubuntu deploy procedure: system packages, service user, code+venv, .env, persona generation, first interactive TG login, systemd unit, updates, backups, hardening.
+- **deploy/** — artifacts:
+  - `azura.service` (systemd unit, hardened: NoNewPrivileges, ProtectSystem=strict, ProtectHome, etc; ReadWritePaths = data + logs only; Restart=on-failure).
+  - `install.sh` (one-shot installer; takes REPO_URL, optional APP_ROOT/APP_USER/PYTHON_BIN).
+  - `deploy/README.md` (pointer to the top-level DEPLOY.md).
+
+## 20. Still TODO
 
 - **task-16**: tests — unit + humanity + activity + social + integration (mocks for kurigram).
-- **task-17**: README polish + TODO doc (voice, vision, multi-account, memory export).
-- **task-18**: Ubuntu deploy notes (systemd unit, journald, env management).

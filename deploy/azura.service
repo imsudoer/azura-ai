@@ -1,0 +1,31 @@
+[Unit]
+Description=azura-ai (Telegram digital-human userbot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=azura
+Group=azura
+WorkingDirectory=/opt/azura/app
+EnvironmentFile=/opt/azura/app/.env
+ExecStart=/opt/azura/app/.venv/bin/python -m azura.run
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=/opt/azura/app/data /opt/azura/app/logs
+
+[Install]
+WantedBy=multi-user.target
