@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "azura-ai"
 version = "0.1.0"
 description = "Telegram userbot acting as a believable digital human"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 readme = "README.md"
 authors = [{ name = "OnlySq" }]
 dependencies = [
@@ -55,7 +55,7 @@ filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.ruff]
 line-length = 110
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]

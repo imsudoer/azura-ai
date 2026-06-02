@@ -27,9 +27,21 @@ _PRAGMAS = (
 )
 
 
+def _unwrap(conn):
+    """Return the underlying stdlib sqlite3.Connection from any aiosqlite/proxy wrapper."""
+    seen = set()
+    cur = conn
+    while cur is not None and id(cur) not in seen:
+        if isinstance(cur, sqlite3.Connection):
+            return cur
+        seen.add(id(cur))
+        cur = getattr(cur, "_connection", None) or getattr(cur, "connection", None) or getattr(cur, "_conn", None)
+    return conn
+
+
 def _on_connect(dbapi_conn, _record):
     """Connection-time hook: enable extension load, attach sqlite-vec, apply pragmas."""
-    raw: sqlite3.Connection = dbapi_conn
+    raw = _unwrap(dbapi_conn)
     try:
         raw.enable_load_extension(True)
         sqlite_vec.load(raw)
