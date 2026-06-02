@@ -68,8 +68,20 @@ class Settings(BaseSettings):
     media_max_download_mb: int = Field(default=20, alias="MEDIA_MAX_DOWNLOAD_MB")
     web_fetch_timeout_s: int = Field(default=15, alias="WEB_FETCH_TIMEOUT_S")
 
+    def absolutize(self) -> None:
+        """Resolve all path fields to absolute (so kurigram + httpx work irrespective of cwd)."""
+        from pathlib import Path as _P
+        for f in (
+            "db_path", "session_path", "personality_path", "personality_lock_path",
+            "journal_dir", "stickers_dir", "gifs_dir", "media_cache_dir", "log_dir",
+        ):
+            v = getattr(self, f)
+            if isinstance(v, _P) and not v.is_absolute():
+                setattr(self, f, _P(v).resolve())
+
     def ensure_dirs(self) -> None:
         """Create every directory the runtime expects."""
+        self.absolutize()
         for p in (
             self.db_path.parent,
             self.session_path.parent,

@@ -151,11 +151,24 @@ async def generate_and_set_photo(client: Client, persona: Persona) -> dict:
     return {"ok": bool(res.get("ok")), "path": str(photo_path)}
 
 
-async def needs_bootstrap(client: Client, repos: Repos, *, force: bool = False) -> bool:
-    """Decide whether to run the bootstrap."""
+async def needs_bootstrap(
+    client: Client, repos: Repos, *, force: bool = False, persona_seed: int | None = None
+) -> bool:
+    """Decide whether to run the bootstrap.
+
+    Triggers:
+      - explicit `force=True`;
+      - no kv `bootstrap.done` yet AND (no first_name / no photo / persona_seed differs);
+    Otherwise skip.
+    """
     if force:
         return True
-    if await is_done(repos):
+    done = await repos.kv.get_json(_KV_DONE)
+    if done:
+        if persona_seed is not None and done.get("persona_seed") != persona_seed:
+            log.info("persona changed (seed {} -> {}), forcing rebootstrap",
+                     done.get("persona_seed"), persona_seed)
+            return True
         return False
     try:
         me = await client.get_me()
@@ -172,7 +185,7 @@ async def needs_bootstrap(client: Client, repos: Repos, *, force: bool = False) 
         pass
     if not photos:
         return True
-    return False
+    return True
 
 
 async def run(
@@ -180,7 +193,7 @@ async def run(
     skip_photo: bool = False,
 ) -> dict:
     """Run the full bootstrap and return a status dict."""
-    if not await needs_bootstrap(client, repos, force=force):
+    if not await needs_bootstrap(client, repos, force=force, persona_seed=persona.seed):
         return {"skipped": True, "reason": "already bootstrapped"}
 
     names = await generate_names(persona)
@@ -200,6 +213,7 @@ async def run(
         "bio": names.get("bio"),
         "username": chosen_username,
         "photo": photo_result,
+        "persona_seed": persona.seed,
     }
     await mark_done(repos, payload)
     return payload

@@ -286,6 +286,57 @@ class Dispatcher:
             _tg_client=client,
         )
         if partial:
+            async def _direct_sender(chat_id, messages, opts):
+                target = chat_id
+                if isinstance(target, str) and not target.lstrip("-").isdigit():
+                    target = target.lstrip("@")
+                sent = 0
+                last_id = None
+                resolved_id = None
+                for text in messages:
+                    if not text:
+                        continue
+                    m = await client.send_message(target, text)
+                    sent += 1
+                    last_id = getattr(m, "id", None)
+                    if resolved_id is None and m and getattr(m, "chat", None):
+                        resolved_id = m.chat.id
+                if resolved_id is not None:
+                    try:
+                        await client.read_chat_history(resolved_id)
+                    except Exception:
+                        pass
+                return {"sent": sent, "skipped": 0, "last_id": last_id, "chat_id": resolved_id}
+
+            async def _direct_sticker(chat_id, query):
+                items = await memory.repos.stickers.pick_by_mood(
+                    valence=0.0, arousal=0.4, limit=3,
+                )
+                if not items:
+                    return {"ok": False, "reason": "no stickers"}
+                pick = items[0]
+                m = await client.send_sticker(chat_id, pick.file_id)
+                await memory.repos.stickers.mark_used(pick.id)
+                return {"ok": True, "msg_id": m.id}
+
+            async def _direct_gif(chat_id, query):
+                items = await memory.repos.gifs.pick_by_tags(
+                    [t.strip() for t in str(query).split(",") if t.strip()], limit=3,
+                )
+                if not items:
+                    return {"ok": False, "reason": "no gifs"}
+                pick = items[0]
+                msg2 = await client.send_animation(chat_id, pick.file_id)
+                await memory.repos.gifs.mark_used(pick.id)
+                return {"ok": True, "msg_id": msg2.id}
+
+            async def _direct_media(chat_id, url, kind):
+                return await send_url(client, chat_id, url, kind=kind)
+
+            ctx.sender = _direct_sender
+            ctx.sticker_sender = _direct_sticker
+            ctx.gif_sender = _direct_gif
+            ctx.media_sender = _direct_media
             return ctx
         if sender is not None:
             async def _sender(chat_id: int, messages: list[str], opts: dict) -> dict:

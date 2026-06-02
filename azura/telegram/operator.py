@@ -43,6 +43,10 @@ async def handle(
     """Dispatch operator messages. Returns True if handled (don't forward to persona)."""
     if not is_operator_chat(msg, settings):
         return False
+    try:
+        await client.read_chat_history(msg.chat.id)
+    except Exception:
+        pass
     body = (msg.text or msg.caption or "").strip()
     if not body:
         return False

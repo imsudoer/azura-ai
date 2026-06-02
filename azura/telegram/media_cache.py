@@ -32,7 +32,7 @@ _EXT_BY_KIND = {
 
 def _chat_dir(chat_id: int) -> Path:
     s = get_settings()
-    p = s.media_cache_dir / str(chat_id)
+    p = (s.media_cache_dir / str(chat_id)).resolve()
     p.mkdir(parents=True, exist_ok=True)
     return p
 

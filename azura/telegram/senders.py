@@ -131,6 +131,10 @@ class Sender:
             sent += 1
 
         await asyncio.sleep(plan.after_send_s)
+        try:
+            await self.c.read_chat_history(chat_id)
+        except Exception:
+            pass
         return SendResult(
             sent=sent, skipped=0,
             delays={
