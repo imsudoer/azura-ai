@@ -62,7 +62,7 @@ class User(Base):
 
 
 class Message(Base):
-    """Raw seen message buffer (per-chat ring)."""
+    """Hot message buffer (per-chat ring, may be trimmed by MessagesRepo.trim())."""
     __tablename__ = "messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -72,15 +72,61 @@ class Message(Base):
     ts: Mapped[int] = mapped_column(BigInteger, index=True)
     kind: Mapped[str] = mapped_column(String(16), default="text")
     text: Mapped[str | None] = mapped_column(Text)
-    reply_to: Mapped[int | None] = mapped_column(BigInteger)
+    reply_to: Mapped[int | None] = mapped_column(BigInteger, index=True)
     media_ref: Mapped[str | None] = mapped_column(String(256))
     is_self: Mapped[bool] = mapped_column(Boolean, default=False)
     seen: Mapped[bool] = mapped_column(Boolean, default=False)
+    media_group_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    edited_ts: Mapped[int | None] = mapped_column(BigInteger)
+    deleted_ts: Mapped[int | None] = mapped_column(BigInteger)
+    forward_from_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    forward_from_chat_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    reactions: Mapped[list] = mapped_column(JSON, default=list)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
 
     __table_args__ = (
         UniqueConstraint("chat_id", "tg_msg_id", name="uq_chat_msg"),
         Index("ix_msg_chat_ts", "chat_id", "ts"),
+        Index("ix_msg_album", "chat_id", "media_group_id"),
+    )
+
+
+class ChatArchive(Base):
+    """Never-trimmed archive of every observed message with full metadata.
+
+    `messages` is the hot ring buffer used for live context; this table preserves
+    history forever, separately FTS5-indexed for long-range search and reply-chain
+    resolution.
+    """
+    __tablename__ = "chat_archive"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("chats.id"), index=True)
+    tg_msg_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    from_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    ts: Mapped[int] = mapped_column(BigInteger, index=True)
+    kind: Mapped[str] = mapped_column(String(24), default="text")
+    text: Mapped[str | None] = mapped_column(Text)
+    caption: Mapped[str | None] = mapped_column(Text)
+    reply_to: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    is_self: Mapped[bool] = mapped_column(Boolean, default=False)
+    media_group_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    forward_from_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    forward_from_chat_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    media: Mapped[dict] = mapped_column(JSON, default=dict)
+    local_path: Mapped[str | None] = mapped_column(String(512))
+    description: Mapped[str | None] = mapped_column(Text)
+    edited_ts: Mapped[int | None] = mapped_column(BigInteger)
+    deleted_ts: Mapped[int | None] = mapped_column(BigInteger)
+    reactions: Mapped[list] = mapped_column(JSON, default=list)
+    service_kind: Mapped[str | None] = mapped_column(String(32))
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("chat_id", "tg_msg_id", name="uq_arch_chat_msg"),
+        Index("ix_arch_chat_ts", "chat_id", "ts"),
+        Index("ix_arch_album", "chat_id", "media_group_id"),
+        Index("ix_arch_reply", "chat_id", "reply_to"),
     )
 
 

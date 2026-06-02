@@ -28,6 +28,7 @@ from azura.mind.tails import TailQueue
 from azura.mind.triggers import detect, urgency
 from azura.personality.schema import Persona
 from azura.telegram.media_dl import send_url
+from azura.telegram.message_record import record_message
 from azura.telegram.operator import handle as op_handle
 from azura.telegram.reply_formatter import build_user_prompt
 from azura.telegram.senders import Sender
@@ -91,6 +92,55 @@ class Dispatcher:
         except Exception:
             log.exception("dispatch failed")
 
+    async def on_edited(self, client: Client, message: Message) -> None:
+        """Update both hot row and archive on an edit event."""
+        try:
+            edited_ts = int(message.edit_date.timestamp()) if message.edit_date else ts()
+            new_text = message.text or message.caption
+            async with self.sm() as session:
+                r = Repos(session)
+                await r.messages.mark_edited(message.chat.id, message.id, new_text, edited_ts)
+                await r.archive.mark_edited(message.chat.id, message.id, new_text, edited_ts)
+                await session.commit()
+        except Exception:
+            log.exception("on_edited failed")
+
+    async def on_deleted(self, client: Client, messages: list[Message]) -> None:
+        """Mark deleted_ts on every affected row."""
+        now = ts()
+        try:
+            async with self.sm() as session:
+                r = Repos(session)
+                for msg in messages:
+                    cid = getattr(getattr(msg, "chat", None), "id", None)
+                    if cid is None:
+                        continue
+                    await r.messages.mark_deleted(cid, msg.id, now)
+                    await r.archive.mark_deleted(cid, msg.id, now)
+                await session.commit()
+        except Exception:
+            log.exception("on_deleted failed")
+
+    async def on_reaction(self, client: Client, update) -> None:
+        """Persist updated reactions on a message."""
+        try:
+            chat = getattr(update, "chat", None)
+            msg_id = getattr(update, "message_id", None) or getattr(update, "msg_id", None)
+            if chat is None or msg_id is None:
+                return
+            new = []
+            for r in getattr(update, "new_reactions", None) or []:
+                emoji = getattr(r, "emoji", None) or getattr(getattr(r, "reaction", None), "emoticon", None)
+                if emoji:
+                    new.append({"emoji": emoji})
+            async with self.sm() as session:
+                rr = Repos(session)
+                await rr.messages.update_reactions(chat.id, msg_id, new)
+                await rr.archive.update_reactions(chat.id, msg_id, new)
+                await session.commit()
+        except Exception:
+            log.exception("on_reaction failed")
+
     async def _dispatch(self, client: Client, msg: Message) -> None:
         if msg.outgoing or msg.from_user is None:
             await self._persist_only(msg)
@@ -108,52 +158,14 @@ class Dispatcher:
     async def _persist_only(self, msg: Message) -> None:
         async with self.sm() as session:
             r = Repos(session)
-            await self._record_message(r, msg)
+            chat_kind = _TG_KIND.get(msg.chat.type, ChatKind.GROUP.value)
+            await record_message(self.client, r, msg, chat_kind=chat_kind, is_self=bool(msg.outgoing))
             await session.commit()
-
-    async def _record_message(self, r: Repos, msg: Message) -> None:
-        kind = "text"
-        media_ref = None
-        if msg.sticker:
-            kind = "sticker"
-            media_ref = msg.sticker.file_id
-        elif msg.animation:
-            kind = "gif"
-            media_ref = msg.animation.file_id
-        elif msg.photo:
-            kind = "photo"
-            media_ref = msg.photo.file_id
-        elif msg.video:
-            kind = "video"
-            media_ref = msg.video.file_id
-        elif msg.voice:
-            kind = "voice"
-        await r.chats.upsert(msg.chat.id, kind=_TG_KIND.get(msg.chat.type, "group"),
-                             title=msg.chat.title, username=msg.chat.username)
-        if msg.from_user:
-            await r.users.upsert(
-                msg.from_user.id,
-                username=msg.from_user.username,
-                first_name=msg.from_user.first_name,
-                last_name=msg.from_user.last_name,
-                is_bot=bool(msg.from_user.is_bot),
-            )
-        await r.messages.add(
-            chat_id=msg.chat.id,
-            tg_msg_id=msg.id,
-            from_id=(msg.from_user.id if msg.from_user else None),
-            ts_=int(msg.date.timestamp()) if msg.date else ts(),
-            kind=kind,
-            text=(msg.text or msg.caption or None),
-            reply_to=(msg.reply_to_message_id if msg.reply_to_message_id else None),
-            media_ref=media_ref,
-            is_self=False,
-        )
 
     async def _run_cycle(self, client: Client, msg: Message, session: AsyncSession, chat_kind: str) -> None:
         r = Repos(session)
         m = MemoryService(r)
-        await self._record_message(r, msg)
+        await record_message(client, r, msg, chat_kind=chat_kind, is_self=bool(msg.outgoing))
 
         if await op_handle(client, msg, ctx=self._make_ctx(client, m, r, msg, partial=True), settings=self.s):
             await session.commit()
@@ -223,6 +235,7 @@ class Dispatcher:
             chat_id=msg.chat.id,
             from_user_id=(msg.from_user.id if msg.from_user else None),
             text=text, trigger=trig, in_private=in_private,
+            incoming_tg_msg_id=msg.id,
             reply_to_text=(msg.reply_to_message.text if msg.reply_to_message else None),
         )
         situation = {
@@ -329,5 +342,16 @@ class Dispatcher:
 
 
 def register(dispatcher: Dispatcher, client: Client) -> None:
-    """Attach the dispatcher to the kurigram client as a single MessageHandler."""
+    """Attach the dispatcher to the kurigram client (message + edited + deleted + reaction)."""
+    from pyrogram.handlers import (
+        DeletedMessagesHandler,
+        EditedMessageHandler,
+        MessageReactionHandler,
+    )
     client.add_handler(MessageHandler(dispatcher.on_message, filters.all))
+    client.add_handler(EditedMessageHandler(dispatcher.on_edited, filters.all))
+    client.add_handler(DeletedMessagesHandler(dispatcher.on_deleted))
+    try:
+        client.add_handler(MessageReactionHandler(dispatcher.on_reaction))
+    except Exception:
+        pass

@@ -41,6 +41,16 @@ FTS_TABLES_DDL = (
         tokenize='unicode61 remove_diacritics 2'
     )
     """,
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS archive_fts USING fts5(
+        text,
+        caption,
+        description,
+        archive_id UNINDEXED,
+        chat_id UNINDEXED,
+        tokenize='unicode61 remove_diacritics 2'
+    )
+    """,
 )
 
 
@@ -83,6 +93,43 @@ async def fts_search_memory(conn: AsyncConnection, query: str, limit: int = 10) 
         ),
         {"q": q, "l": limit},
     )
+    return [row[0] for row in r.fetchall()]
+
+
+async def fts_insert_archive(
+    conn: AsyncConnection,
+    archive_id: int,
+    chat_id: int,
+    text_: str,
+    caption: str,
+    description: str,
+) -> None:
+    """Index an archive row by its text / caption / vision-description."""
+    await conn.execute(
+        text(
+            "INSERT INTO archive_fts(archive_id, chat_id, text, caption, description) "
+            "VALUES (:i, :c, :t, :cap, :d)"
+        ),
+        {"i": archive_id, "c": chat_id, "t": text_ or "", "cap": caption or "", "d": description or ""},
+    )
+
+
+async def fts_search_archive(
+    conn: AsyncConnection, query: str, *, chat_id: int | None = None, limit: int = 20
+) -> list[int]:
+    """Return archive ids matching a query, optionally scoped to one chat."""
+    q = fts_quote(query)
+    if q == '""':
+        return []
+    sql = (
+        "SELECT archive_id FROM archive_fts WHERE archive_fts MATCH :q"
+        + (" AND chat_id = :ch" if chat_id is not None else "")
+        + " ORDER BY bm25(archive_fts) LIMIT :l"
+    )
+    params: dict = {"q": q, "l": limit}
+    if chat_id is not None:
+        params["ch"] = chat_id
+    r = await conn.execute(text(sql), params)
     return [row[0] for row in r.fetchall()]
 
 

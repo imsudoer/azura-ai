@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from azura.db.repo.archive import ArchiveRepo
 from azura.db.repo.attention import AttentionRepo
 from azura.db.repo.chats import ChatsRepo
 from azura.db.repo.episodes import EpisodesRepo
@@ -28,6 +29,7 @@ class Repos:
         self.chats = ChatsRepo(s)
         self.users = UsersRepo(s)
         self.messages = MessagesRepo(s)
+        self.archive = ArchiveRepo(s)
         self.memory = MemoryRepo(s)
         self.episodes = EpisodesRepo(s)
         self.opinions = OpinionsRepo(s)

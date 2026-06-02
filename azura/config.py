@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     model_embed: str = Field(default="text-embedding-3-small", alias="MODEL_EMBED")
     embed_dim: int = Field(default=1536, alias="EMBED_DIM")
     embeddings_enabled: bool = Field(default=True, alias="EMBEDDINGS_ENABLED")
+    model_vision: str = Field(default="", alias="MODEL_VISION")
+    model_imagen: str = Field(default="imagen-4", alias="MODEL_IMAGEN")
+    vision_enabled: bool = Field(default=False, alias="VISION_ENABLED")
+    media_cache_max_mb: int = Field(default=2048, alias="MEDIA_CACHE_MAX_MB")
 
     db_path: Path = Field(default=Path("data/state.db"), alias="DB_PATH")
     session_path: Path = Field(default=Path("data/session"), alias="SESSION_PATH")

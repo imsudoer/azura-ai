@@ -140,9 +140,15 @@ class MindScheduler:
                 log.exception("tail delivery failed for chat {}", t.chat_id)
 
     async def _forgetting_tick(self) -> None:
+        from azura.config import get_settings
+        from azura.telegram.media_cache import enforce_cache_quota
         async with self.sm() as s:
             r = Repos(s); m = MemoryService(r)
             stats = await m.forgetting.step()
+        try:
+            enforce_cache_quota(max_mb=get_settings().media_cache_max_mb)
+        except Exception:
+            log.exception("media cache eviction failed")
             await s.commit()
             log.info("forgetting: {}", stats)
 
