@@ -305,20 +305,29 @@ class Dispatcher:
                 sent = 0
                 last_id = None
                 resolved_id: int | None = None
+                msgs = [t for t in messages if t]
 
                 async def _keep_typing(cid):
+                    """Re-issue TYPING every 3s so the indicator never expires."""
+                    n = 0
                     while True:
                         try:
                             await client.send_chat_action(cid, ChatAction.TYPING)
-                        except Exception:
-                            pass
-                        await _asyncio.sleep(4.0)
+                            n += 1
+                            if n == 1:
+                                log.info("typing started chat={}", cid)
+                        except Exception as e:
+                            log.warning("send_chat_action failed chat={} err={}", cid, e)
+                        await _asyncio.sleep(3.0)
 
-                for idx, text in enumerate(messages):
-                    if not text:
-                        continue
+                def _type_delay_for(text):
+                    chars = len(text)
+                    base = max(2.0, min(9.0, chars / 11.0))
+                    return base * (0.85 + (hash(text) % 30) / 100.0)
+
+                for idx, text in enumerate(msgs):
                     typing_target = resolved_id if resolved_id is not None else target
-                    type_s = max(1.5, min(6.0, len(text) / 15.0))
+                    type_s = _type_delay_for(text)
                     keep = _asyncio.create_task(_keep_typing(typing_target))
                     try:
                         await _asyncio.sleep(type_s)
@@ -327,15 +336,16 @@ class Dispatcher:
                         keep.cancel()
                         try:
                             await keep
-                        except (_asyncio.CancelledError, Exception):
+                        except BaseException:
                             pass
                     sent += 1
                     last_id = getattr(m, "id", None)
                     if resolved_id is None and m and getattr(m, "chat", None):
                         resolved_id = m.chat.id
                         target = resolved_id
-                    if idx + 1 < len(messages):
-                        await _asyncio.sleep(0.8)
+                    if idx + 1 < len(msgs):
+                        gap = max(0.7, min(3.0, len(msgs[idx + 1]) / 60.0))
+                        await _asyncio.sleep(gap)
                 if resolved_id is not None:
                     try:
                         await client.read_chat_history(resolved_id)

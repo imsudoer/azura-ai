@@ -153,12 +153,23 @@ async def _handle_nl(
 ) -> bool:
     """LLM-classify the message as command-or-chat; if command, run tool calls."""
     friend_first_name = (msg.from_user.first_name or "друг").strip() if msg.from_user else "друг"
+    p = ctx.persona
+    persona_voice = (
+        f"{p.identity.name}, {p.identity.age}, {p.identity.city}. "
+        f"register={p.speech.speech_register}, humor={p.derived.get('humor_style','dry')}, "
+        f"caps={p.speech.uses_caps}, emoji={p.speech.uses_emoji}, punctuation={p.speech.punctuation}. "
+        f"avg sentence ≈ {p.speech.sentence_length_avg} words. "
+        f"top traits: " + ", ".join(
+            f"{k}={v:.2f}" for k, v in sorted(p.traits.items(), key=lambda kv: -kv[1])[:6]
+        )
+    )
     sys = render(
         "operator_intent.j2",
         tool_catalog=_tool_catalog(ctx),
         current_chat_id=msg.chat.id,
         operator_id=settings.operator_id,
         friend_first_name=friend_first_name,
+        persona_voice=persona_voice,
     )
     try:
         out = await think_json(

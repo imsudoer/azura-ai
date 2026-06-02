@@ -23,8 +23,6 @@ ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-LockPersonality=true
-MemoryDenyWriteExecute=true
 ReadWritePaths=/opt/azura/app/data /opt/azura/app/logs
 
 [Install]
