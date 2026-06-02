@@ -443,8 +443,8 @@ Web tools always wrap themselves in `go_afk` / `come_back` so the persona looks 
 | task-11 | humanize (delays/typing/typos/splitter/style/anti-detect/backpressure) | done |
 | task-12 | tools (registry + 9 families, 32 tools) | done |
 | task-13 | telegram (kurigram app, handlers, readers/senders, online, media_dl, stickers_collector, operator, patches) | done |
-| task-14 | memory consolidator + dreams | todo |
-| task-15 | run.py wiring | todo |
+| task-14 | memory consolidator + dreams | done |
+| task-15 | run.py wiring | done |
 | task-16 | tests | todo |
 | task-17 | README + TODO (voice, vision, multi-account, memory export) | todo |
 | task-18 | ubuntu deploy prep | todo |
@@ -475,9 +475,47 @@ Key points:
 - `operator.handle` accepts only DMs from `OPERATOR_ID`, body must start with `OPERATOR_SECRET`. Commands: `status`, `sleep`, `wake`, `journal [N]`, `pause`, `resume`.
 - `web_impl.py` (in `tools/`): DDG html search + safe `fetch_text` (SSRF guard); both are wrapped by `web_tools` in `go_afk`/`come_back` so the persona looks visibly busy.
 
-## 17. What's next
+## 17. Consolidation + dreams (task-14 — done)
 
-- **task-14**: `memory/consolidator.py` (summarize short→long, opinions/feelings nightly recalc) + `memory/dreams.py` (LLM dream pass: rewrite, forget, re-rank, journal).
-- **task-15**: `azura/run.py` — boot: load .env, init DB+schema, ensure_immutable persona, build engines, build Dispatcher + Reader + MindScheduler, register handlers, start client, wait for shutdown.
+- `memory/consolidator.py::Consolidator.consolidate_chat(chat_id)` reads up to 60 recent short-term notes, asks `MODEL_THINK` (via `consolidate.j2`) for: stable facts, opinion deltas, feeling bumps, episodes. Persists everything with embeddings (via EmbedCache). `consolidate_all_active()` iterates over every chat with short-term notes.
+- `memory/dreams.py::Dreams.run()` (called by scheduler when presence == asleep) feeds recent episodes + top positives/negatives + mood snapshot to `MODEL_THINK` (via `dream.j2`). Persists: global_keeps, opinion_softens, feeling_softens, episode_reframes, dream_journal line. Calls `mood.sleep_reset()` afterwards.
+- Scheduler periods: `consolidate` ~1h, `dream` ~15m (only fires when asleep).
+
+## 18. Entry point (task-15 — done)
+
+- `azura/run.py::main()` (also `azura` console script) does:
+  1. Load `Settings` (warns if `ONLYSQ_API_KEY` empty).
+  2. `ensure_immutable(persona, lock)` — abort if persona missing or tampered.
+  3. `init_engine(db_path)` + `init_schema(embed_dim)`.
+  4. Build shared `Rng`, `Backpressure`, `StyleDiversity`, `TailQueue`.
+  5. Build kurigram `Client` via `make_client(s)`.
+  6. Build `Dispatcher` + register a single `MessageHandler(dispatcher.on_message, filters.all)`.
+  7. Wire callbacks for the scheduler:
+     - `on_tail(chat_id, text)` opens a fresh session and sends via `Sender`.
+     - `on_status(state)` opens a session, reads presence, and calls `push_status` to update TG online state.
+  8. Build `MindScheduler` (heartbeat, life_events, tails, forgetting, consolidate, dream) and `ReaderLoop` (attention pass every ~90s with jitter).
+  9. `client.start()` → `get_me()` log → `scheduler.start()` → `reader_loop.start()`.
+  10. Wait on `stop_event` (SIGINT/SIGTERM on POSIX, KeyboardInterrupt elsewhere).
+  11. Graceful shutdown: reader_loop → scheduler → client.stop() → dispose_engine().
+
+### How to run end-to-end
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e .[dev]
+
+copy .env.example .env
+# fill ONLYSQ_API_KEY in .env
+
+python -m azura.init_personality --interactive
+python -m azura.run
+```
+
+On first start kurigram will ask for phone/code interactively in stdin (it writes `data/session.session`). Subsequent starts use the saved session.
+
+## 19. Still TODO
+
 - **task-16**: tests — unit + humanity + activity + social + integration (mocks for kurigram).
-- **task-17/18**: README rewrite + deploy notes (Ubuntu, systemd service, journald, env management).
+- **task-17**: README polish + TODO doc (voice, vision, multi-account, memory export).
+- **task-18**: Ubuntu deploy notes (systemd unit, journald, env management).

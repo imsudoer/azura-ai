@@ -20,7 +20,7 @@ class TailDraft:
 class TailQueue:
     """In-memory queue of delayed follow-ups."""
 
-    def __init__(self, persona: Persona, memory: MemoryService, *, rng: Rng) -> None:
+    def __init__(self, persona: Persona, memory: MemoryService | None = None, *, rng: Rng) -> None:
         self.p = persona
         self.m = memory
         self.rng = rng
