@@ -54,11 +54,13 @@ class Reader:
         for cand in queue:
             try:
                 att = await self.memory.repos.attention.start(cand.chat_id)
+                await self.memory.repos.s.commit()
                 await self.c.read_chat_history(cand.chat_id)
                 read = await self.memory.repos.messages.mark_seen(cand.chat_id, 10**18)
                 await self.memory.repos.attention.finish(
                     att.id, msgs_read=read, decided="read",
                 )
+                await self.memory.repos.s.commit()
                 opened += 1
                 await asyncio.sleep(self.rng.uniform(1.5, 6.0))
             except Exception as e:

@@ -192,11 +192,27 @@ def _repair_truncated_json(s: str) -> dict | None:
 
 
 async def embed(*, model: str, inputs: list[str]) -> list[list[float]]:
-    """Embeddings via OpenAI-compatible /embeddings."""
+    """Embeddings via OpenAI-compatible /embeddings.
+
+    OnlySq routes some embed models (e.g. gemini-embedding-001) to providers that
+    reject either batch input arrays or extra OpenAI fields like `user`. Strategy:
+    try batch first; on failure, retry per-input.
+    """
     cli = get_client()
 
-    async def call():
+    async def call_batch():
         return await cli.embeddings.create(model=model, input=inputs)
 
-    r = await _with_retries(call)
-    return [d.embedding for d in r.data]
+    try:
+        r = await _with_retries(call_batch)
+        return [d.embedding for d in r.data]
+    except Exception as e:
+        log.warning("embed batch failed ({}), falling back to per-input", e)
+
+    out: list[list[float]] = []
+    for s in inputs:
+        async def call_one(text=s):
+            return await cli.embeddings.create(model=model, input=text)
+        r = await _with_retries(call_one)
+        out.append(r.data[0].embedding)
+    return out

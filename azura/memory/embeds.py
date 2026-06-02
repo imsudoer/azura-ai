@@ -29,8 +29,7 @@ class EmbedCache:
         try:
             out = await embed_texts([text])
         except Exception as e:
-            log.warning("embed failed, disabling for this session: {}", e)
-            self._disabled = True
+            log.warning("embed failed (one-off, not disabling): {}", e)
             return None
         if not out:
             return None
@@ -47,9 +46,8 @@ class EmbedCache:
             try:
                 vecs = await embed_texts(missing)
             except Exception as e:
-                log.warning("embed batch failed, disabling: {}", e)
-                self._disabled = True
-                return [None] * len(texts)
+                log.warning("embed batch failed (one-off, not disabling): {}", e)
+                return [self._cache.get(t) for t in texts]
             for t, v in zip(missing, vecs, strict=True):
                 self._cache[t] = v
         return [self._cache.get(t) for t in texts]

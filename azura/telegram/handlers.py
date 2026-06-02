@@ -273,6 +273,19 @@ class Dispatcher:
             "presence": presence.state.value,
             "clock_phase": clk.phase,
         }
+        if is_operator:
+            op_name = (msg.from_user.first_name if msg.from_user else "друг") or "друг"
+            situation["relation"] = (
+                f"You are texting {op_name} — your closest, oldest friend. "
+                "You trust him completely. You can be sarcastic, blunt, tired, affectionate. "
+                "You can also tell him you'll do something for you (write to a person, change your bio, "
+                "go AFK, etc.) and you actually DO it. He sometimes asks small chores or wants to know how you are. "
+                "NEVER react to his messages with 'I'm not a bot' — he KNOWS you, he's not testing you. "
+                "If he asks 'what commands can I give you' — he means casually 'what can you do for me' — "
+                "answer like a friend: 'ну могу кому-то написать, отписываться тебе, менять свой профиль, спать по твоему расписанию — что хочешь'."
+            )
+        else:
+            situation["relation"] = "a contact (not operator). normal social rules apply."
         result = await agent.run(
             mood=mood, situation=situation, user_prompt=user_prompt,
             tools=tools, max_steps=4,

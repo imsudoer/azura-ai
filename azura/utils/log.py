@@ -21,11 +21,24 @@ def _suppress_noisy_warnings() -> None:
         "message.forward_date",
     ):
         warnings.filterwarnings("ignore", message=f".*{needle}.*")
+    import logging as _logging
+    class _DropDeprecations(_logging.Filter):
+        def filter(self, record: _logging.LogRecord) -> bool:
+            m = record.getMessage()
+            if "deprecated" in m or "forward_from" in m or "forward_origin" in m:
+                return False
+            return True
+    root = _logging.getLogger()
+    root.addFilter(_DropDeprecations())
     for name in (
         "pyrogram", "pyrogram.session", "pyrogram.connection",
         "pyrogram.dispatcher", "pyrogram.client", "pyrogram.types",
+        "pyrogram.types.messages_and_media.message",
     ):
-        logging.getLogger(name).setLevel(logging.ERROR)
+        lg = _logging.getLogger(name)
+        lg.setLevel(_logging.ERROR)
+        lg.addFilter(_DropDeprecations())
+        lg.propagate = False
 
 
 def setup_logging(level: str = "INFO", log_dir: Path | None = None) -> None:
