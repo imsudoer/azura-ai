@@ -40,12 +40,12 @@ def build_registry(ctx: ToolContext) -> ToolRegistry:
     for t in operator_tools.build(ctx):
         reg.add(t, "operator")
     for t in account_tools.build(ctx):
-        reg.add(t, "account", "operator")
+        reg.add(t, "account", "self")
     for t in privacy_tools.build(ctx):
-        reg.add(t, "privacy", "operator")
+        reg.add(t, "privacy", "self")
     return reg
 
 
 def default_tool_subset(reg: ToolRegistry) -> list:
-    """Sensible default subset for an ordinary reply turn (no operator/web)."""
+    """Sensible default subset for an ordinary reply turn (no operator-only meta-tools)."""
     return reg.select(exclude_tags={"operator"})

@@ -166,6 +166,7 @@ class Dispatcher:
         r = Repos(session)
         m = MemoryService(r)
         await record_message(client, r, msg, chat_kind=chat_kind, is_self=bool(msg.outgoing))
+        await session.commit()
 
         if await op_handle(client, msg, ctx=self._make_ctx(client, m, r, msg, partial=True), settings=self.s):
             await session.commit()
@@ -202,19 +203,34 @@ class Dispatcher:
                 return
             from azura.constants import Presence as _P
             from azura.utils.timez import ts as _ts
-            wake_until = _ts() + self.rng.randint(20 * 60, 45 * 60)
+            afk_reasons = [
+                "в тиктоке залипла",
+                "не могу уснуть, лежу в телефоне",
+                "встала попить воды",
+                "читаю твиттер в кровати",
+                "скроллю пинтерест",
+                "проснулась от кота",
+                "смотрю резервы на youtube",
+            ]
+            reason = self.rng.choice(afk_reasons)
+            wake_until = _ts() + self.rng.randint(5 * 60, 15 * 60)
             presence = await presence_eng.set(
-                _P.ONLINE, reason="woke up: operator dm", until_ts=wake_until,
+                _P.AFK, reason=reason, until_ts=wake_until,
             )
-            log.info("temp wakeup chat={} user={} reason=operator",
-                     msg.chat.id, msg.from_user.id if msg.from_user else None)
-        decision = await intent_eng.decide_reply(
-            chat_id=msg.chat.id,
-            from_user_id=(msg.from_user.id if msg.from_user else None),
-            text=text, trigger=trig, mood=mood, in_private=in_private,
-        )
-        log.info("intent chat={} decision={} score={:.2f} reason='{}'",
-                 msg.chat.id, decision.decision, decision.score, decision.reason)
+            log.info("night dm from operator: AFK={} until={}", reason, wake_until)
+        is_operator = bool(msg.from_user and msg.from_user.id == self.s.operator_id)
+        if is_operator:
+            from azura.mind.intent import IntentDecision
+            decision = IntentDecision(decision="reply", score=1.0, reason="operator override")
+            log.info("intent override: operator dm chat={}", msg.chat.id)
+        else:
+            decision = await intent_eng.decide_reply(
+                chat_id=msg.chat.id,
+                from_user_id=(msg.from_user.id if msg.from_user else None),
+                text=text, trigger=trig, mood=mood, in_private=in_private,
+            )
+            log.info("intent chat={} decision={} score={:.2f} reason='{}'",
+                     msg.chat.id, decision.decision, decision.score, decision.reason)
 
         if decision.decision in ("ignore", "later"):
             await session.commit()

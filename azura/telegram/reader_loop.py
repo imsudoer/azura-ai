@@ -76,7 +76,7 @@ class ReaderLoop:
             att = Attention(self.p, r, m)
             reader = Reader(self.c, attention=att, presence=presence, memory=m, rng=self.rng)
             mv = await mood.now()
-            opened = await reader.cycle(mood=mv, max_chats=self.rng.randint(3, 7))
+            opened = await reader.cycle(mood=mv, max_chats=self.rng.randint(3, 7), persona=self.p)
             await s.commit()
             if opened:
                 log.info("attention pass: opened {} chats", opened)

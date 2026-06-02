@@ -23,7 +23,8 @@ _PRAGMAS = (
     "PRAGMA mmap_size=268435456",
     "PRAGMA cache_size=-65536",
     "PRAGMA foreign_keys=ON",
-    "PRAGMA busy_timeout=5000",
+    "PRAGMA busy_timeout=30000",
+    "PRAGMA wal_autocheckpoint=1000",
 )
 
 

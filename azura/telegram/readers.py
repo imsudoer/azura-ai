@@ -34,11 +34,21 @@ class Reader:
         self.memory = memory
         self.rng = rng
 
-    async def cycle(self, *, mood: MoodView, max_chats: int = 6) -> int:
+    async def cycle(self, *, mood: MoodView, max_chats: int = 6, persona=None) -> int:
         """One attention pass. Returns the number of chats actually opened."""
         cur = await self.presence.current()
-        if cur.state in (Presence.ASLEEP, Presence.OFFLINE, Presence.AFK):
+        if cur.state in (Presence.ASLEEP, Presence.OFFLINE, Presence.AFK, Presence.BUSY):
+            log.info("reader skip: presence={}", cur.state.value)
             return 0
+        if persona is not None:
+            try:
+                from azura.mind.clock import snapshot
+                clk = snapshot(persona)
+                if clk.is_sleep_window:
+                    log.info("reader skip: sleep window (clk)")
+                    return 0
+            except Exception:
+                pass
         queue = await self.attention.queue(mood=mood, limit=max_chats)
         opened = 0
         for cand in queue:

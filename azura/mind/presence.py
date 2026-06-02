@@ -69,15 +69,21 @@ class PresenceEngine:
         cur = await self.current()
         now = ts()
         if cur.until_ts and now >= cur.until_ts and cur.state in (Presence.AFK, Presence.BUSY):
-            await self.set(Presence.ONLINE, reason="back")
+            if clock.is_sleep_window:
+                until = ts() + seconds_until_wake(self.p, clock.local)
+                await self.set(Presence.ASLEEP, reason="обратно спать", until_ts=until)
+            else:
+                await self.set(Presence.ONLINE, reason="back")
             cur = await self.current()
         if clock.is_sleep_window:
             if cur.state == Presence.ASLEEP:
                 if self.rng.chance(self._wake_chance(fatigue)):
-                    until = now + self.rng.randint(60, 8 * 60)
+                    until = now + self.rng.randint(5 * 60, 15 * 60)
                     return await self.set(
-                        Presence.ONLINE, reason="brief wakeup", until_ts=until
+                        Presence.AFK, reason="проснулась ночью", until_ts=until
                     )
+                return cur
+            if cur.state == Presence.AFK:
                 return cur
             until = ts() + seconds_until_wake(self.p, clock.local)
             return await self.set(Presence.ASLEEP, reason="going to sleep", until_ts=until)
