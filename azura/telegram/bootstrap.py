@@ -136,9 +136,9 @@ async def generate_and_set_photo(client: Client, persona: Persona) -> dict:
     except Exception as e:
         log.warning("portrait prompt build failed: {}", e)
         return {"ok": False, "stage": "prompt", "reason": str(e)}
-    log.info("portrait prompt ({} chars)", len(prompt))
+    log.info("portrait prompt ({} chars), negative ({} chars)", len(prompt), len(negative))
     try:
-        paths = await imagen.generate(prompt=prompt + ("\n\nNEGATIVE: " + negative if negative else ""), n=1)
+        paths = await imagen.generate(prompt=prompt, n=1)
     except Exception as e:
         return {"ok": False, "stage": "imagen", "reason": str(e)}
     if not paths:

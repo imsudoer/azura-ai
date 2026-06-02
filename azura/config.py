@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     embed_dim: int = Field(default=1536, alias="EMBED_DIM")
     embeddings_enabled: bool = Field(default=True, alias="EMBEDDINGS_ENABLED")
     model_vision: str = Field(default="", alias="MODEL_VISION")
-    model_imagen: str = Field(default="imagen-4", alias="MODEL_IMAGEN")
+    model_imagen: str = Field(default="phoenix-1.0", alias="MODEL_IMAGEN")
     vision_enabled: bool = Field(default=False, alias="VISION_ENABLED")
     media_cache_max_mb: int = Field(default=2048, alias="MEDIA_CACHE_MAX_MB")
 
