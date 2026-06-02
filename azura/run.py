@@ -146,6 +146,19 @@ async def _amain() -> int:
     except Exception:
         log.exception("failed to push initial presence to telegram")
 
+    from azura.telegram.tg_presence import PresenceKeeper
+
+    async def _get_state():
+        async with sm() as ks:
+            from azura.db.repo import Repos as _R2
+            from azura.memory.service import MemoryService as _M2
+            _r2 = _R2(ks); _m2 = _M2(_r2)
+            v = await PresenceEngine(persona, _m2, rng=rng).current()
+            return v.state
+
+    presence_keeper = PresenceKeeper(client, _get_state, interval_s=25.0)
+    await presence_keeper.start()
+
     await scheduler.start()
     await reader_loop.start()
     log.info("azura-ai online — listening")
@@ -155,6 +168,7 @@ async def _amain() -> int:
         pass
     finally:
         log.info("shutting down...")
+        await presence_keeper.stop()
         await reader_loop.stop()
         await scheduler.stop()
         await client.stop()
