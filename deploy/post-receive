@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+WORK_TREE=/opt/azura/app
+GIT_DIR=/srv/git/azura-ai.git
+VENV="$WORK_TREE/.venv"
+
+while read oldrev newrev refname ; do
+  branch="${refname##refs/heads/}"
+  if [ "$branch" != "master" ] && [ "$branch" != "main" ] ; then
+    continue
+  fi
+  echo "[hook] deploying $branch ($newrev)"
+  git --git-dir="$GIT_DIR" --work-tree="$WORK_TREE" checkout -f "$branch"
+  if [ -d "$VENV" ] ; then
+    echo "[hook] pip install -e ."
+    "$VENV/bin/pip" install -q -e "$WORK_TREE"
+  else
+    echo "[hook] venv not found yet, skip pip install"
+  fi
+  if systemctl is-active --quiet azura ; then
+    echo "[hook] restarting azura.service"
+    systemctl restart azura
+  fi
+done
