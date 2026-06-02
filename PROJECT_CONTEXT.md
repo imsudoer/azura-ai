@@ -197,6 +197,7 @@ azura-ai/
 | `MODEL_THINK` | `pplx-gemini-3.1-pro` | thinking model |
 | `MODEL_EMBED` | `text-embedding-3-small` | embeddings |
 | `EMBED_DIM` | `1536` | vec0 column width |
+| `EMBEDDINGS_ENABLED` | `true` | set `false` to run without embeddings; recall falls back to FTS5 only |
 | paths | `data/...`, `logs/` | created at boot |
 | `HUMANIZE_MIN_REPLY_DELAY_S` | `2.5` | hard floor before replying |
 | `HUMANIZE_MAX_REPLY_DELAY_S` | `900` | ceiling |

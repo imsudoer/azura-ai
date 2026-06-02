@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     model_think: str = Field(default="pplx-gemini-3.1-pro", alias="MODEL_THINK")
     model_embed: str = Field(default="text-embedding-3-small", alias="MODEL_EMBED")
     embed_dim: int = Field(default=1536, alias="EMBED_DIM")
+    embeddings_enabled: bool = Field(default=True, alias="EMBEDDINGS_ENABLED")
 
     db_path: Path = Field(default=Path("data/state.db"), alias="DB_PATH")
     session_path: Path = Field(default=Path("data/session"), alias="SESSION_PATH")
