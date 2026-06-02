@@ -26,7 +26,12 @@ def build(ctx: ToolContext) -> list[ToolSpec]:
 
     async def remember_fact(args: dict) -> dict:
         emb = None
-        text = str(args["content"])
+        text = str(
+            args.get("content") or args.get("text") or args.get("fact")
+            or args.get("summary") or args.get("note") or ""
+        ).strip()
+        if not text:
+            return {"error": "empty content"}
         try:
             emb = await ctx.memory.embeds.get(text)
         except Exception:
@@ -43,14 +48,19 @@ def build(ctx: ToolContext) -> list[ToolSpec]:
         return {"id": mid}
 
     async def remember_episode(args: dict) -> dict:
-        text = str(args["summary"])
+        text = str(
+            args.get("summary") or args.get("content") or args.get("text") or ""
+        ).strip()
+        if not text:
+            return {"error": "empty summary"}
+        title = str(args.get("title") or text[:60]).strip()
         emb = None
         try:
             emb = await ctx.memory.embeds.get(text)
         except Exception:
             emb = None
         eid = await ctx.memory.episodic.remember(
-            title=str(args["title"]),
+            title=title,
             summary=text,
             chat_id=args.get("chat_id") or ctx.chat_id,
             user_id=args.get("user_id"),

@@ -12,6 +12,10 @@ Output STRICT JSON:
 
 When kind = "command", `calls` must be non-empty and use ONLY tool names from the catalog. When kind = "chat", `calls` MUST be empty.
 
+IMPORTANT: ONE message from the operator can contain MULTIPLE independent instructions. Split them into separate tool calls. Example: "напиши @x привет" AND "присылай мне отчёты" → TWO calls: send_messages to @x + remember_fact about a standing instruction to report.
+
+If an instruction is a standing rule for future behavior (e.g. "присылай мне отчёты", "всегда отвечай ей короче", "если она спросит про X, скажи Y") → use remember_fact with topic="operator_directive", content=verbatim text. Future replies will see this in long memory and behave accordingly.
+
 Tool catalog (name → 1-line description):
 {{ tool_catalog }}
 
@@ -31,6 +35,7 @@ Guidelines:
 - "скрой статус от @alice" / "hide last seen from @alice" → hide_from_user category="status".
 - "покажи статус @alice" / "show last seen to @alice" → show_to_user category="status".
 - "поставь аву" / "перегенерируй фото" → no direct tool yet; return kind="chat" with a short ack like "щас, обновлю" — operator will trigger via slash command.
+- "присылай мне отчёты", "держи меня в курсе", "всегда делай X" → remember_fact with topic="operator_directive", confidence=1.0, importance=1.0 and content=full verbatim instruction.
 - If the operator clearly wants a conversation (no clear command verb, asking how she's doing, joking, etc.) → return kind="chat" with calls=[].
 - If ambiguous → kind="chat" with a short clarifying reply.
 

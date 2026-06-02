@@ -295,24 +295,37 @@ class Dispatcher:
                 sent = 0
                 last_id = None
                 resolved_id: int | None = None
+
+                async def _keep_typing(cid):
+                    while True:
+                        try:
+                            await client.send_chat_action(cid, ChatAction.TYPING)
+                        except Exception:
+                            pass
+                        await _asyncio.sleep(4.0)
+
                 for idx, text in enumerate(messages):
                     if not text:
                         continue
                     typing_target = resolved_id if resolved_id is not None else target
+                    type_s = max(1.5, min(6.0, len(text) / 15.0))
+                    keep = _asyncio.create_task(_keep_typing(typing_target))
                     try:
-                        await client.send_chat_action(typing_target, ChatAction.TYPING)
-                    except Exception:
-                        pass
-                    type_s = max(0.6, min(3.0, len(text) / 30.0))
-                    await _asyncio.sleep(type_s)
-                    m = await client.send_message(target, text)
+                        await _asyncio.sleep(type_s)
+                        m = await client.send_message(target, text)
+                    finally:
+                        keep.cancel()
+                        try:
+                            await keep
+                        except (_asyncio.CancelledError, Exception):
+                            pass
                     sent += 1
                     last_id = getattr(m, "id", None)
                     if resolved_id is None and m and getattr(m, "chat", None):
                         resolved_id = m.chat.id
                         target = resolved_id
                     if idx + 1 < len(messages):
-                        await _asyncio.sleep(0.6)
+                        await _asyncio.sleep(0.8)
                 if resolved_id is not None:
                     try:
                         await client.read_chat_history(resolved_id)
