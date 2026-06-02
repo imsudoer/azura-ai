@@ -48,8 +48,7 @@ async def _draft(hints: dict, *, temperature: float) -> dict:
     return await think_json(
         [{"role": "system", "content": sys}, {"role": "user", "content": usr}],
         temperature=temperature,
-        max_tokens=4096,
-        response_format={"type": "json_object"},
+        max_tokens=8192,
     )
 
 
@@ -60,8 +59,7 @@ async def _critique(persona_obj: dict) -> dict:
     return await think_json(
         [{"role": "system", "content": sys}, {"role": "user", "content": usr}],
         temperature=0.2,
-        max_tokens=2048,
-        response_format={"type": "json_object"},
+        max_tokens=4096,
     )
 
 

@@ -5,7 +5,7 @@ import asyncio
 from typing import Any
 
 import orjson
-from openai import APIConnectionError, APIError, AsyncOpenAI, RateLimitError
+from openai import APIConnectionError, APIError, APIStatusError, AsyncOpenAI, RateLimitError
 
 from azura.config import get_settings
 from azura.utils.log import get_logger
@@ -38,9 +38,10 @@ async def _with_retries(fn, *, attempts: int = 4, base_delay: float = 1.0):
             delay = base_delay * (2**i)
             log.warning("llm transient {} attempt {}/{}, sleep {:.1f}s", type(e).__name__, i + 1, attempts, delay)
             await asyncio.sleep(delay)
-        except APIError as e:
+        except (APIStatusError, APIError) as e:
             last = e
-            if 500 <= getattr(e, "status_code", 500) < 600:
+            sc = getattr(e, "status_code", None) or getattr(getattr(e, "response", None), "status_code", 0)
+            if sc and 500 <= sc < 600:
                 delay = base_delay * (2**i)
                 log.warning("llm 5xx attempt {}/{}, sleep {:.1f}s", i + 1, attempts, delay)
                 await asyncio.sleep(delay)
@@ -88,13 +89,33 @@ async def chat_text(*, model: str, messages: list[dict[str, Any]], **kw) -> str:
 
 
 async def chat_json(*, model: str, messages: list[dict[str, Any]], **kw) -> dict:
-    """Convenience: parse JSON object out of the model output, tolerant to code fences."""
+    """Convenience: parse JSON object out of the model output, tolerant to code fences.
+
+    We never forward `response_format` to the upstream: many OnlySq-routed models
+    (incl. pplx-gemini-3.1-pro) reject it with HTTP 500. `_extract_json` is
+    robust enough to handle plain prose with a JSON block inside.
+    """
+    kw.pop("response_format", None)
     raw = await chat_text(model=model, messages=messages, **kw)
-    return _extract_json(raw)
+    try:
+        return _extract_json(raw)
+    except Exception as e:
+        log.error(
+            "JSON parse failed ({}). model={} raw_len={}\n--- RAW ---\n{}\n--- END ---",
+            e, model, len(raw), raw[:8000],
+        )
+        raise
 
 
 def _extract_json(text: str) -> dict:
-    """Best-effort JSON extraction; falls back to first {...} block."""
+    """Best-effort JSON extraction from a model response.
+
+    Strategy:
+      1. Strip code fences.
+      2. Try plain orjson.loads().
+      3. Try the outer {...} block.
+      4. If still truncated, repair by closing dangling strings, arrays, objects.
+    """
     s = text.strip()
     if s.startswith("```"):
         s = s.strip("`")
@@ -103,11 +124,71 @@ def _extract_json(text: str) -> dict:
     try:
         return orjson.loads(s)
     except Exception:
-        i = s.find("{")
-        j = s.rfind("}")
-        if i >= 0 and j > i:
+        pass
+    i = s.find("{")
+    j = s.rfind("}")
+    if i >= 0 and j > i:
+        try:
             return orjson.loads(s[i : j + 1])
-        raise
+        except Exception:
+            pass
+    if i >= 0:
+        repaired = _repair_truncated_json(s[i:])
+        if repaired is not None:
+            return repaired
+    raise ValueError("could not parse JSON from model response")
+
+
+def _repair_truncated_json(s: str) -> dict | None:
+    """Attempt to close dangling strings / arrays / objects in a truncated JSON.
+
+    Walks the text tracking string state, escape state, and a stack of open braces
+    / brackets. At end, closes whatever is still open and tries to parse.
+    """
+    out = []
+    stack: list[str] = []
+    in_str = False
+    esc = False
+    for ch in s:
+        out.append(ch)
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            stack.append("}")
+        elif ch == "[":
+            stack.append("]")
+        elif ch in "}]":
+            if stack and stack[-1] == ch:
+                stack.pop()
+    if in_str:
+        out.append('"')
+    last_real = ""
+    for ch in reversed(out):
+        if not ch.isspace():
+            last_real = ch
+            break
+    if last_real == ",":
+        for idx in range(len(out) - 1, -1, -1):
+            if out[idx] == ",":
+                out[idx] = " "
+                break
+            if not out[idx].isspace():
+                break
+    while stack:
+        out.append(stack.pop())
+    candidate = "".join(out)
+    try:
+        return orjson.loads(candidate)
+    except Exception:
+        return None
 
 
 async def embed(*, model: str, inputs: list[str]) -> list[list[float]]:
