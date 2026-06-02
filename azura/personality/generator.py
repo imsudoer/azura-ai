@@ -63,12 +63,115 @@ async def _critique(persona_obj: dict) -> dict:
     )
 
 
+_SPEECH_REGISTER = ("formal", "neutral", "casual", "slangy")
+_FREQ_VALUES = ("never", "rare", "moderate", "often")
+_PUNCT_VALUES = ("strict", "loose", "messy")
+_REPLY_SPEED = ("instant", "fast", "medium", "slow", "lazy")
+
+
+def _coerce_enum(value, allowed: tuple[str, ...], default: str) -> str:
+    """Best-effort: pick an exact match, else substring match, else default."""
+    if isinstance(value, bool):
+        return "moderate" if (value and "moderate" in allowed) else ("rare" if "rare" in allowed else default)
+    if not isinstance(value, str):
+        return default
+    s = value.strip().lower()
+    if s in allowed:
+        return s
+    for opt in allowed:
+        if opt in s:
+            return opt
+    return default
+
+
+def _coerce_dict_list(value, key_name: str = "name") -> list[dict]:
+    """Wrap strings/objects into a list[dict] form."""
+    if not isinstance(value, list):
+        return []
+    out: list[dict] = []
+    for item in value:
+        if isinstance(item, dict):
+            out.append(item)
+        elif isinstance(item, str):
+            out.append({key_name: item})
+    return out
+
+
+def _coerce_str_list(value, *, key_for_dict: str = "name") -> list[str]:
+    """Flatten a list[str|dict] into list[str]."""
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            out.append(item)
+        elif isinstance(item, dict):
+            parts = []
+            for k in (key_for_dict, "title", "species", "name"):
+                v = item.get(k)
+                if isinstance(v, str):
+                    parts.append(v)
+                    break
+            extra = []
+            for k, v in item.items():
+                if k in (key_for_dict, "title", "species", "name"):
+                    continue
+                if isinstance(v, str):
+                    extra.append(f"{k}={v}")
+            joined = (": ".join(parts) if parts else "") + (" (" + ", ".join(extra) + ")" if extra else "")
+            if joined.strip():
+                out.append(joined.strip())
+    return out
+
+
 def _post_normalize(obj: dict, seed: int) -> dict:
-    """Force schema_version, seed, normalized traits and derived labels."""
+    """Force schema_version, seed, normalized traits, derived labels, and shape coercions."""
     obj["schema_version"] = 1
     obj["seed"] = seed
     obj["traits"] = normalize_traits(obj.get("traits") or {})
     obj["derived"] = derive_all(obj["traits"])
+
+    sp = obj.get("speech") or {}
+    if isinstance(sp, dict):
+        if "register" in sp:
+            sp["register"] = _coerce_enum(sp.get("register"), _SPEECH_REGISTER, "casual")
+        if "uses_emoji" in sp:
+            sp["uses_emoji"] = _coerce_enum(sp.get("uses_emoji"), _FREQ_VALUES, "rare")
+        if "uses_caps" in sp:
+            sp["uses_caps"] = _coerce_enum(sp.get("uses_caps"), _FREQ_VALUES, "rare")
+        if "punctuation" in sp:
+            sp["punctuation"] = _coerce_enum(sp.get("punctuation"), _PUNCT_VALUES, "loose")
+        obj["speech"] = sp
+
+    soc = obj.get("social") or {}
+    if isinstance(soc, dict) and "reply_speed" in soc:
+        soc["reply_speed"] = _coerce_enum(soc.get("reply_speed"), _REPLY_SPEED, "medium")
+        obj["social"] = soc
+
+    hh = obj.get("household") or {}
+    if isinstance(hh, dict):
+        hh["pets"] = _coerce_str_list(hh.get("pets"), key_for_dict="species")
+        hh["lives_with"] = _coerce_str_list(hh.get("lives_with"))
+        obj["household"] = hh
+
+    sc = obj.get("social_circle") or {}
+    if isinstance(sc, dict):
+        for key in ("close_friends", "acquaintances", "rivals"):
+            sc[key] = _coerce_dict_list(sc.get(key))
+        obj["social_circle"] = sc
+
+    if isinstance(obj.get("life_events"), list):
+        cleaned = []
+        for ev in obj["life_events"]:
+            if isinstance(ev, dict) and ev.get("title") and ev.get("description"):
+                ev.setdefault("when", "unspecified")
+                cleaned.append(ev)
+        obj["life_events"] = cleaned
+
+    for k in ("values", "interests", "dislikes", "secrets", "habits"):
+        if k in obj:
+            obj[k] = _coerce_str_list(obj[k])
+
     return obj
 
 
