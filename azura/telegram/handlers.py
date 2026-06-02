@@ -77,6 +77,7 @@ class Dispatcher:
         self._mood_factory = mood_engine_factory
         self._presence_factory = presence_engine_factory
         self._locks: dict[int, asyncio.Lock] = {}
+        self._cooldown: dict[int, int] = {}
 
     def _lock(self, chat_id: int) -> asyncio.Lock:
         lk = self._locks.get(chat_id)
@@ -168,6 +169,19 @@ class Dispatcher:
         await record_message(client, r, msg, chat_kind=chat_kind, is_self=bool(msg.outgoing))
         await session.commit()
 
+        is_operator = bool(msg.from_user and msg.from_user.id == self.s.operator_id)
+
+        if not is_operator:
+            from azura.utils.timez import ts as _ts
+            now = _ts()
+            exp = self._cooldown.get(msg.chat.id)
+            if exp is not None and exp > now:
+                log.info("chat {} in cooldown ({}s left), skip LLM",
+                         msg.chat.id, exp - now)
+                return
+            if exp is not None:
+                self._cooldown.pop(msg.chat.id, None)
+
         if await op_handle(client, msg, ctx=self._make_ctx(client, m, r, msg, partial=True), settings=self.s):
             await session.commit()
             return
@@ -232,11 +246,27 @@ class Dispatcher:
             log.info("intent chat={} decision={} score={:.2f} reason='{}'",
                      msg.chat.id, decision.decision, decision.score, decision.reason)
 
-        if decision.decision in ("ignore", "later"):
-            await session.commit()
-            return
-        if decision.decision == "read_only":
-            await client.read_chat_history(msg.chat.id)
+        if decision.decision in ("ignore", "later", "read_only"):
+            from azura.utils.timez import ts as _ts
+            reason = (decision.reason or "").lower()
+            if "tired" in reason or "fatigue" in reason:
+                base = self.rng.randint(15 * 60, 35 * 60)
+            elif "ghost" in reason:
+                base = self.rng.randint(8 * 60, 20 * 60)
+            elif "didn't feel" in reason or "didnt feel" in reason or "lazy" in reason:
+                base = self.rng.randint(5 * 60, 15 * 60)
+            elif decision.decision == "read_only":
+                base = self.rng.randint(3 * 60, 10 * 60)
+            else:
+                base = self.rng.randint(6 * 60, 18 * 60)
+            self._cooldown[msg.chat.id] = _ts() + base
+            log.info("chat {} → cooldown {}s ({} / {})",
+                     msg.chat.id, base, decision.decision, decision.reason)
+            if decision.decision == "read_only":
+                try:
+                    await client.read_chat_history(msg.chat.id)
+                except Exception:
+                    pass
             await session.commit()
             return
         if decision.decision == "react":
@@ -297,6 +327,10 @@ class Dispatcher:
                 in_private=in_private, urgency=urgency(trig),
                 reply_to=msg.id if not in_private else None,
             )
+            try:
+                await client.read_chat_history(msg.chat.id)
+            except Exception:
+                pass
         await session.commit()
 
     def _make_ctx(

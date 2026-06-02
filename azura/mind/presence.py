@@ -27,10 +27,13 @@ class PresenceView:
 class PresenceEngine:
     """Decide and persist presence transitions."""
 
-    def __init__(self, persona: Persona, memory: MemoryService, *, rng: Rng) -> None:
+    def __init__(
+        self, persona: Persona, memory: MemoryService, *, rng: Rng, tg_client=None,
+    ) -> None:
         self.p = persona
         self.m = memory
         self.rng = rng
+        self.tg = tg_client
 
     async def current(self) -> PresenceView:
         cur = await self.m.repos.presence.current()
@@ -57,6 +60,12 @@ class PresenceEngine:
                 f"→ {state.value}" + (f" ({reason})" if reason else ""),
                 kind="presence",
             )
+        if self.tg is not None:
+            try:
+                from azura.telegram.tg_presence import apply_to_telegram
+                await apply_to_telegram(self.tg, state)
+            except Exception:
+                pass
         cur = await self.m.repos.presence.current()
         assert cur is not None
         return PresenceView(

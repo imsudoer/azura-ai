@@ -69,7 +69,7 @@ async def _amain() -> int:
         backpressure=bp,
         style=style,
         mood_engine_factory=lambda p, m, *, rng: MoodEngine(p, m, rng=rng),
-        presence_engine_factory=lambda p, m, *, rng: PresenceEngine(p, m, rng=rng),
+        presence_engine_factory=lambda p, m, *, rng: PresenceEngine(p, m, rng=rng, tg_client=client),
     )
     register(dispatcher, client)
 
@@ -134,6 +134,17 @@ async def _amain() -> int:
             log.info("account bootstrap applied: {}", bs)
     except Exception:
         log.exception("account bootstrap failed (continuing)")
+
+    try:
+        async with sm() as _boot_s:
+            from azura.db.repo import Repos as _R
+            from azura.memory.service import MemoryService as _M
+            from azura.telegram.tg_presence import apply_to_telegram as _apply
+            _r = _R(_boot_s); _m = _M(_r)
+            _cur = await PresenceEngine(persona, _m, rng=rng, tg_client=client).current()
+            await _apply(client, _cur.state)
+    except Exception:
+        log.exception("failed to push initial presence to telegram")
 
     await scheduler.start()
     await reader_loop.start()
