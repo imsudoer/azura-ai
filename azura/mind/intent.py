@@ -9,7 +9,10 @@ from azura.memory.service import MemoryService
 from azura.mind.mood import MoodView
 from azura.mind.triggers import TriggerHit, urgency
 from azura.personality.schema import Persona
+from azura.utils.log import get_logger
 from azura.utils.rng import Rng
+
+log = get_logger("mind.intent")
 
 Decision = Literal["reply", "read_only", "ignore", "react", "later"]
 
@@ -51,6 +54,14 @@ class IntentEngine:
             prox = await self.m.opinions.proximity(from_user_id)
             feelings = await self.m.feelings.toward_user(from_user_id)
         op_chat = await self.m.opinions.chat(chat_id)
+
+        log.debug(
+            "intent.inputs chat={} from={} private={} urg={:.2f} op_user={} op_chat={} prox={} "
+            "feelings={} fatigue={:.2f} valence={:.2f} energy={:.2f} stress={:.2f}",
+            chat_id, from_user_id, in_private, u_urg, op_user, op_chat, prox.value,
+            {k: round(v, 2) for k, v in feelings.items()},
+            mood.fatigue, mood.valence, mood.energy, mood.stress,
+        )
 
         base = 0.55 if in_private else 0.22
         base += t["talkativeness"] * 0.20 - (1 - t["social_battery"]) * 0.15

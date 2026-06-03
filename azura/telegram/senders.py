@@ -96,10 +96,25 @@ class Sender:
         await self.bp.gate(chat_id)
         from azura.telegram.tg_presence import go_online_briefly
         await go_online_briefly(self.c, seconds=max(45.0, plan.pre_read_s + plan.pre_type_s + plan.type_burst_s + 30.0))
+
+        log.info(
+            "reply gate chat={} pre_read={:.1f}s pre_type={:.1f}s burst={:.1f}s parts={} chars={}",
+            chat_id, plan.pre_read_s, plan.pre_type_s, plan.type_burst_s, len(parts), total_len,
+        )
         if plan.pre_read_s > 0:
             await asyncio.sleep(plan.pre_read_s)
-
-        await self.c.read_chat_history(chat_id)
+        log.debug("reply gate chat={} -> read_chat_history (1/2)", chat_id)
+        try:
+            await self.c.read_chat_history(chat_id)
+        except Exception as e:
+            log.warning("read_chat_history failed chat={} err={}", chat_id, e)
+        think_s = self.rng.uniform(0.6, 2.2)
+        log.debug("reply gate chat={} think pause {:.1f}s", chat_id, think_s)
+        await asyncio.sleep(think_s)
+        try:
+            await self.c.read_chat_history(chat_id)
+        except Exception:
+            pass
 
         between = split_burst_delays(self.rng, len(parts))
         sent = 0

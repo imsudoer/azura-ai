@@ -66,16 +66,23 @@ class Reader:
         if not queue:
             return 0
 
-        weights = [max(0.01, getattr(c, "score", 0.5)) for c in queue]
+        from azura.mind.attention import Attention as _Att
+        top_tier = min(_Att._tier(c) for c in queue)
+        same_tier = [c for c in queue if _Att._tier(c) == top_tier]
+        weights = [max(0.01, getattr(c, "score", 0.5)) for c in same_tier]
         total = sum(weights)
         r = self.rng.uniform(0.0, total)
         upto = 0.0
-        choice = queue[0]
-        for cand, w in zip(queue, weights, strict=True):
+        choice = same_tier[0]
+        for cand, w in zip(same_tier, weights, strict=True):
             upto += w
             if upto >= r:
                 choice = cand
                 break
+        log.info(
+            "reader queue: total={} top_tier={} same_tier={} chose={}",
+            len(queue), top_tier, len(same_tier), choice.chat_id,
+        )
 
         await asyncio.sleep(self.rng.uniform(0.3, 1.6))
 

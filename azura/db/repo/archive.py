@@ -172,3 +172,10 @@ class ArchiveRepo:
         q = q.order_by(ChatArchive.ts.desc()).limit(limit)
         r = await self.s.execute(q)
         return list(reversed(r.scalars().all()))
+
+    async def last_self_ts(self) -> int | None:
+        """Timestamp of the most recent message authored by the persona, across all chats."""
+        from sqlalchemy import func
+        q = select(func.max(ChatArchive.ts)).where(ChatArchive.is_self.is_(True))
+        r = await self.s.execute(q)
+        return r.scalar()

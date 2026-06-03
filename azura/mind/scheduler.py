@@ -117,12 +117,39 @@ class MindScheduler:
                 log.exception("on_status failed")
 
     async def _life_tick(self) -> None:
+        from azura.utils.timez import ts as _ts
+        from azura.constants import Presence as _P
         async with self.sm() as s:
             r = Repos(s); m = MemoryService(r)
             presence = PresenceEngine(self.p, m, rng=self.rng)
             cur = await presence.current()
-            if cur.state.value != "online":
-                return
+            now = _ts()
+
+            if cur.state.value == "online":
+                last_self = await r.archive.last_self_ts() if hasattr(r.archive, "last_self_ts") else None
+                if last_self and (now - last_self) > 15 * 60 and self.rng.chance(0.25):
+                    reasons = [
+                        "вышла скроллить тикток",
+                        "села пить чай",
+                        "открыла фигму",
+                        "пошла на кухню",
+                        "в яндекс-музыке залипла",
+                        "в пинтересте сижу",
+                        "погулять вышла",
+                        "читаю книгу",
+                        "смотрю ютуб",
+                        "рисую в прокреате",
+                    ]
+                    minutes = self.rng.randint(10, 45)
+                    reason = self.rng.choice(reasons)
+                    await presence.set(_P.AFK, reason=reason, until_ts=now + minutes * 60)
+                    log.info("life: drift online -> afk ({}, {} min)", reason, minutes)
+
+            elif cur.state.value == "afk":
+                if cur.until_ts and now >= cur.until_ts:
+                    await presence.set(_P.ONLINE, reason="back")
+                    log.info("life: afk expired -> online")
+
             life = LifeEventEngine(self.p, m, presence, rng=self.rng)
             await life.maybe_roll()
             await s.commit()
