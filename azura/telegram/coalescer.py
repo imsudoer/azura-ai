@@ -83,7 +83,8 @@ class Coalescer:
                 slot.timer.cancel()
 
             remaining_budget = self.max_wait_s - (time.monotonic() - slot.first_ts)
-            wait = max(0.5, min(self.wait_s, remaining_budget))
+            base_wait = self.wait_s if len(slot.pending_ids) > 1 else self.wait_s * 0.6
+            wait = max(0.3, min(base_wait, remaining_budget))
             log.info(
                 "coalesce queue chat={} mid={} pending={} wait={:.1f}s",
                 chat_id, mid, len(slot.pending_ids), wait,

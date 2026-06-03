@@ -45,7 +45,7 @@ Situation (CURRENT FACTS — never contradict these):
 - forwarded message: {{ situation.is_forwarded }}
 - urgency: {{ situation.urgency }}
 
-{% if situation.my_chat_role %}- your role in this chat: status={{ situation.my_chat_role.get('status', 'member') }} send_text={{ situation.my_chat_role.get('can_send_text', true) }} send_media={{ situation.my_chat_role.get('can_send_media', true) }} admin={{ situation.my_chat_role.get('is_admin', false) }}
+{% if situation.my_chat_role is mapping %}- your role in this chat: status={{ situation.my_chat_role.status | default('member') }} send_text={{ situation.my_chat_role.can_send_text | default(true) }} send_media={{ situation.my_chat_role.can_send_media | default(true) }} admin={{ situation.my_chat_role.is_admin | default(false) }}
 {% endif %}Full situation dump:
 {{ situation }}
 
