@@ -206,10 +206,19 @@ class Dispatcher:
 
         await self._persist_only(msg)
 
-        try:
-            await self._maybe_read_if_awaiting(msg)
-        except Exception:
-            log.debug("awaiting-read check failed", exc_info=True)
+        slot = self._coalescer._slots.get(msg.chat.id)
+        runner_active = slot is not None and slot.runner is not None and not slot.runner.done()
+        if runner_active:
+            try:
+                await client.read_chat_history(msg.chat.id)
+                log.debug("read mid-runner chat={} msg={}", msg.chat.id, msg.id)
+            except Exception:
+                pass
+        else:
+            try:
+                await self._maybe_read_if_awaiting(msg)
+            except Exception:
+                log.debug("awaiting-read check failed", exc_info=True)
 
         await self._coalescer.submit(msg.chat.id, msg)
 
