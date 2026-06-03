@@ -13,6 +13,7 @@ from azura.tools import (
     send_tools,
     sticker_tools,
     web_tools,
+    world_tools,
 )
 from azura.tools.context import ToolContext
 from azura.tools.registry import ToolRegistry
@@ -43,6 +44,8 @@ def build_registry(ctx: ToolContext) -> ToolRegistry:
         reg.add(t, "account", "self")
     for t in privacy_tools.build(ctx):
         reg.add(t, "privacy", "self")
+    for t in world_tools.build(ctx):
+        reg.add(t, "world", "chat")
     return reg
 
 
