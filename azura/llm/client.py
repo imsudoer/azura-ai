@@ -195,19 +195,29 @@ import base64
 import struct
 
 
-def _decode_b64_float(s: str) -> list[float]:
+def _decode_b64_float32(s: str) -> list[float]:
     raw = base64.b64decode(s)
     n = len(raw) // 4
     return list(struct.unpack(f"{n}f", raw))
 
 
+def _decode_b64_int8(s: str) -> list[float]:
+    raw = base64.b64decode(s)
+    vals = struct.unpack(f"{len(raw)}b", raw)
+    return [v / 127.0 for v in vals]
+
+
 def _coerce_embedding(emb) -> list[float]:
-    """Accept either list[float] or base64 string and return list[float]."""
+    """Accept list[float] / base64-float32 / base64-int8 and return list[float]."""
     if isinstance(emb, str):
-        try:
-            return _decode_b64_float(emb)
-        except Exception:
-            return []
+        for decoder in (_decode_b64_float32, _decode_b64_int8):
+            try:
+                v = decoder(emb)
+                if v:
+                    return v
+            except Exception:
+                continue
+        return []
     return list(emb)
 
 
@@ -239,14 +249,21 @@ async def embed(*, model: str, inputs: list[str]) -> list[list[float]]:
             continue
         except Exception as e:
             log.warning("embed one (float) failed ({}), trying base64", e)
-        try:
-            r = await _with_retries(
-                lambda text=s: cli.embeddings.create(
-                    model=model, input=text, encoding_format="base64",
+        ok = False
+        for fmt in ("base64_int8", "base64_binary", "base64"):
+            try:
+                r = await _with_retries(
+                    lambda text=s, _fmt=fmt: cli.embeddings.create(
+                        model=model, input=text, encoding_format=_fmt,
+                    )
                 )
-            )
-            out.append(_coerce_embedding(r.data[0].embedding))
-        except Exception as e:
-            log.warning("embed one (base64) failed ({}), giving up this text", e)
+                emb = _coerce_embedding(r.data[0].embedding)
+                if emb:
+                    out.append(emb)
+                    ok = True
+                    break
+            except Exception as e:
+                log.warning("embed one ({}) failed ({}), next", fmt, e)
+        if not ok:
             out.append([])
     return out
