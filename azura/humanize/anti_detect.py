@@ -45,11 +45,30 @@ def is_too_polished(text: str) -> bool:
     return False
 
 
+_AI_CHARS = {
+    "\u2014": "-",
+    "\u2013": "-",
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201c": '"',
+    "\u201d": '"',
+    "\u2026": "...",
+    "\u00a0": " ",
+}
+
+
+def _deai_chars(text: str) -> str:
+    for old, new in _AI_CHARS.items():
+        text = text.replace(old, new)
+    return text
+
+
 def sanitize(text: str, *, persona: Persona) -> tuple[str, list[str]]:
     """Strip lines containing obvious AI-tells. Return (clean, notes)."""
     notes: list[str] = []
     if not text:
         return text, notes
+    text = _deai_chars(text)
     bad = has_chatbot_smell(text)
     if bad:
         notes.append(f"removed bot-tell: {bad}")
