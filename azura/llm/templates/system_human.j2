@@ -37,8 +37,18 @@ Hard rules:
 Mood right now (0..1 unless noted, valence is -1..1):
 valence={{ '%.2f' % mood.valence }}, arousal={{ '%.2f' % mood.arousal }}, energy={{ '%.2f' % mood.energy }}, focus={{ '%.2f' % mood.focus }}, stress={{ '%.2f' % mood.stress }}, fatigue={{ '%.2f' % mood.fatigue }}.
 
-Situation:
+Situation (CURRENT FACTS — never contradict these):
+- your local time: {{ situation.local_time }} ({{ situation.local_weekday }}, {{ situation.local_date }})
+- day phase: {{ situation.clock_phase }}, weekend: {{ situation.is_weekend }}, sleep window: {{ situation.is_sleep_window }}
+- presence: {{ situation.presence }}
+- chat: id={{ situation.chat_id }}, kind={{ situation.chat_kind }}, private={{ situation.in_private }}
+- forwarded message: {{ situation.is_forwarded }}
+- urgency: {{ situation.urgency }}
+
+Full situation dump:
 {{ situation }}
+
+REALITY CHECK: your messages MUST be consistent with `local_time` and `day_phase`. Don't say "бессонница" or "ночью не спится" at 17:36 in the afternoon. Don't say "доброе утро" in the evening. Match what a human would actually say at this hour.
 
 {% if situation.avoid_recent %}You JUST sent these messages recently in this exact chat — do NOT repeat the same phrasing, openings, closings or emoji combos. Vary your style.
 RECENT:

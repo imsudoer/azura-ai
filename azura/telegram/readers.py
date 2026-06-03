@@ -84,6 +84,27 @@ class Reader:
             len(queue), top_tier, len(same_tier), choice.chat_id,
         )
 
+        open_prob = 0.0
+        if top_tier == 0:
+            open_prob = 0.55
+        elif top_tier == 1:
+            open_prob = 0.30
+        else:
+            open_prob = 0.12
+        unseen = max(0, getattr(choice, "unseen", 0))
+        if unseen >= 5:
+            open_prob += 0.25
+        elif unseen >= 2:
+            open_prob += 0.10
+        open_prob = max(0.0, min(0.95, open_prob))
+
+        if not self.rng.chance(open_prob):
+            log.info(
+                "reader peek-only chat={} tier={} unseen={} open_prob={:.2f} (no online)",
+                choice.chat_id, top_tier, unseen, open_prob,
+            )
+            return 0
+
         await asyncio.sleep(self.rng.uniform(0.3, 1.6))
 
         try:
@@ -95,7 +116,10 @@ class Reader:
             read = await self.memory.repos.messages.mark_seen(choice.chat_id, 10**18)
             await self.memory.repos.attention.finish(att.id, msgs_read=read, decided="read")
             await self.memory.repos.s.commit()
-            log.info("reader picked chat={} score={:.2f}", choice.chat_id, getattr(choice, "score", 0.0))
+            log.info(
+                "reader opened chat={} tier={} unseen={} score={:.2f}",
+                choice.chat_id, top_tier, unseen, getattr(choice, "score", 0.0),
+            )
             return 1
         except Exception as e:
             err = str(e).lower()

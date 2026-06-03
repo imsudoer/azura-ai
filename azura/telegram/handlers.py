@@ -78,6 +78,7 @@ class Dispatcher:
         self._presence_factory = presence_engine_factory
         self._locks: dict[int, asyncio.Lock] = {}
         self._cooldown: dict[int, int] = {}
+        self.typing_watcher = None
 
     def _lock(self, chat_id: int) -> asyncio.Lock:
         lk = self._locks.get(chat_id)
@@ -89,9 +90,50 @@ class Dispatcher:
     async def on_message(self, client: Client, message: Message) -> None:
         """Entry point bound to MessageHandler."""
         try:
+            cid = getattr(getattr(message, "chat", None), "id", None)
+            uid = getattr(getattr(message, "from_user", None), "id", None)
+            if self.typing_watcher is not None and cid is not None and uid is not None:
+                self.typing_watcher.clear(cid, uid)
+        except Exception:
+            pass
+        try:
             await self._dispatch(client, message)
         except Exception:
             log.exception("dispatch failed")
+
+    async def on_raw_update(self, client: Client, update, users, chats) -> None:
+        """Catch UpdateUserTyping / UpdateChatUserTyping to feed the typing watcher."""
+        if self.typing_watcher is None:
+            return
+        cls_name = update.__class__.__name__
+        if cls_name not in ("UpdateUserTyping", "UpdateChatUserTyping", "UpdateChannelUserTyping"):
+            return
+        try:
+            chat_id = (
+                getattr(update, "user_id", None)
+                if cls_name == "UpdateUserTyping"
+                else getattr(update, "chat_id", None) or getattr(update, "channel_id", None)
+            )
+            from_peer = getattr(update, "from_id", None)
+            user_id = None
+            if from_peer is not None:
+                user_id = (
+                    getattr(from_peer, "user_id", None)
+                    or getattr(from_peer, "channel_id", None)
+                    or getattr(from_peer, "chat_id", None)
+                )
+            if user_id is None and cls_name == "UpdateUserTyping":
+                user_id = getattr(update, "user_id", None)
+            action = update.__class__.__name__ if not hasattr(update, "action") else update.action.__class__.__name__
+            if "Typing" not in action and "SendMessage" not in action and "Upload" not in action:
+                return
+            if cls_name == "UpdateChannelUserTyping":
+                chat_id = -1000000000000 - int(getattr(update, "channel_id", 0))
+            if chat_id is None or user_id is None:
+                return
+            self.typing_watcher.note_typing(int(chat_id), int(user_id))
+        except Exception:
+            log.debug("on_raw_update typing parse failed", exc_info=True)
 
     async def on_edited(self, client: Client, message: Message) -> None:
         """Update both hot row and archive on an edit event."""
@@ -302,6 +344,11 @@ class Dispatcher:
             "urgency": round(urgency(trig), 2),
             "presence": presence.state.value,
             "clock_phase": clk.phase,
+            "local_time": clk.local.strftime("%H:%M"),
+            "local_weekday": clk.local.strftime("%A"),
+            "local_date": clk.local.strftime("%Y-%m-%d"),
+            "is_sleep_window": clk.is_sleep_window,
+            "is_weekend": clk.is_weekend,
             "is_forwarded": bool(getattr(msg, "forward_origin", None)),
             "avoid_recent": self.style.recent_texts(chat_id=msg.chat.id, limit=8),
         }
@@ -503,11 +550,12 @@ class Dispatcher:
 
 
 def register(dispatcher: Dispatcher, client: Client) -> None:
-    """Attach the dispatcher to the kurigram client (message + edited + deleted + reaction)."""
+    """Attach the dispatcher to the kurigram client (message + edited + deleted + reaction + raw typing)."""
     from pyrogram.handlers import (
         DeletedMessagesHandler,
         EditedMessageHandler,
         MessageReactionHandler,
+        RawUpdateHandler,
     )
     client.add_handler(MessageHandler(dispatcher.on_message, filters.all))
     client.add_handler(EditedMessageHandler(dispatcher.on_edited, filters.all))
@@ -516,3 +564,7 @@ def register(dispatcher: Dispatcher, client: Client) -> None:
         client.add_handler(MessageReactionHandler(dispatcher.on_reaction))
     except Exception:
         pass
+    try:
+        client.add_handler(RawUpdateHandler(dispatcher.on_raw_update))
+    except Exception:
+        log.exception("failed to add RawUpdateHandler for typing")

@@ -84,6 +84,26 @@ async def _amain() -> int:
     )
     register(dispatcher, client)
 
+    from azura.telegram.typing_watcher import TypingWatcher
+
+    async def _on_orphan_typing(chat_id: int, user_id: int, duration: float) -> None:
+        log.info(
+            "orphan typing chat={} user={} duration={:.1f}s",
+            chat_id, user_id, duration,
+        )
+
+    async def _on_typing_start(chat_id: int, user_id: int) -> None:
+        log.debug("someone typing chat={} user={}", chat_id, user_id)
+
+    typing_watcher = TypingWatcher(
+        on_typing_start=_on_typing_start,
+        on_orphan_typing=_on_orphan_typing,
+        expire_s=12.0,
+        min_orphan_duration_s=3.0,
+    )
+    dispatcher.typing_watcher = typing_watcher
+    await typing_watcher.start()
+
     async def on_tail(chat_id: int, text: str) -> None:
         if not text:
             return
@@ -181,6 +201,10 @@ async def _amain() -> int:
     finally:
         log.info("shutting down...")
         await presence_keeper.stop()
+        try:
+            await typing_watcher.stop()
+        except Exception:
+            pass
         await reader_loop.stop()
         await scheduler.stop()
         await client.stop()
