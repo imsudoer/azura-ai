@@ -418,6 +418,8 @@ class Dispatcher:
                 presence.state.value, presence_excuse, wake_delay,
             )
             await asyncio.sleep(wake_delay)
+        from azura.mind.chat_heat import chat_heat as _get_heat
+        _heat = await _get_heat(r, msg.chat.id)
         if is_operator:
             from azura.mind.intent import ReplyDecision
             decision = ReplyDecision(decision="reply", score=1.0, reason="operator override")
@@ -427,6 +429,7 @@ class Dispatcher:
                 chat_id=msg.chat.id,
                 from_user_id=(msg.from_user.id if msg.from_user else None),
                 text=text, trigger=trig, mood=mood, in_private=in_private,
+                heat=_heat,
             )
             log.info("intent chat={} decision={} score={:.2f} reason='{}'",
                      msg.chat.id, decision.decision, decision.score, decision.reason)
@@ -444,9 +447,11 @@ class Dispatcher:
                 base = self.rng.randint(3 * 60, 10 * 60)
             else:
                 base = self.rng.randint(6 * 60, 18 * 60)
+            if _heat > 0.5:
+                base = max(30, int(base * (1.0 - _heat * 0.7)))
             self._cooldown[msg.chat.id] = _ts() + base
-            log.info("chat {} → cooldown {}s ({} / {})",
-                     msg.chat.id, base, decision.decision, decision.reason)
+            log.info("chat {} → cooldown {}s (heat={:.2f} {} / {})",
+                     msg.chat.id, base, _heat, decision.decision, decision.reason)
             if decision.decision == "read_only":
                 try:
                     await client.read_chat_history(msg.chat.id)

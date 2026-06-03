@@ -173,6 +173,28 @@ class ArchiveRepo:
         r = await self.s.execute(q)
         return list(reversed(r.scalars().all()))
 
+    async def count_since(self, chat_id: int, since_ts: int) -> int:
+        """Count messages in a chat since a given timestamp."""
+        from sqlalchemy import func
+        q = (
+            select(func.count())
+            .where(ChatArchive.chat_id == chat_id)
+            .where(ChatArchive.ts >= since_ts)
+        )
+        r = await self.s.execute(q)
+        return r.scalar() or 0
+
+    async def last_incoming_ts(self, chat_id: int) -> int | None:
+        """Timestamp of the most recent non-self message in a chat."""
+        from sqlalchemy import func
+        q = (
+            select(func.max(ChatArchive.ts))
+            .where(ChatArchive.chat_id == chat_id)
+            .where(ChatArchive.is_self.is_(False))
+        )
+        r = await self.s.execute(q)
+        return r.scalar()
+
     async def last_self_ts(self, chat_id: int | None = None) -> int | None:
         """Timestamp of the most recent self-message. Optionally scoped to a chat."""
         from sqlalchemy import func

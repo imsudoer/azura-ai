@@ -85,7 +85,8 @@ class Reader:
         )
 
         unseen = max(0, getattr(choice, "unseen", 0))
-        if unseen == 0:
+        heat = getattr(choice, "heat", 0.0)
+        if unseen == 0 and heat < 0.3:
             open_prob = 0.0
         else:
             if top_tier == 0:
@@ -98,12 +99,13 @@ class Reader:
                 base += 0.25
             elif unseen >= 2:
                 base += 0.10
+            base += heat * 0.30
             open_prob = max(0.0, min(0.95, base))
 
         if not self.rng.chance(open_prob):
             log.info(
-                "reader peek-only chat={} tier={} unseen={} open_prob={:.2f} (no online)",
-                choice.chat_id, top_tier, unseen, open_prob,
+                "reader peek-only chat={} tier={} unseen={} heat={:.2f} open_prob={:.2f} (no online)",
+                choice.chat_id, top_tier, unseen, heat, open_prob,
             )
             return 0
 

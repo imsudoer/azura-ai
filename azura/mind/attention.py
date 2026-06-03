@@ -22,6 +22,7 @@ class ChatCandidate:
     unseen: int
     last_seen_ts: int
     score: float
+    heat: float = 0.0
 
 
 _KIND_BONUS = {
@@ -43,17 +44,20 @@ class Attention:
 
     async def queue(self, *, mood: MoodView, limit: int = 20) -> list[ChatCandidate]:
         """Return ranked candidates respecting the priority schema."""
+        from azura.mind.chat_heat import chat_heat as _heat
         chats = await self.r.chats.all_active()
         candidates: list[ChatCandidate] = []
         for c in chats:
             if c.importance <= -100:
                 continue
             unseen = await self.r.messages.unseen_count(c.id)
-            if unseen == 0 and c.last_seen_ts and ts() - c.last_seen_ts > 24 * 3600:
+            heat = await _heat(self.r, c.id)
+            if unseen == 0 and heat < 0.05 and c.last_seen_ts and ts() - c.last_seen_ts > 24 * 3600:
                 continue
             cand = ChatCandidate(
                 chat_id=c.id, kind=c.kind, muted=c.muted, importance=c.importance,
-                opinion=c.opinion, unseen=unseen, last_seen_ts=c.last_seen_ts, score=0.0,
+                opinion=c.opinion, unseen=unseen, last_seen_ts=c.last_seen_ts,
+                score=0.0, heat=heat,
             )
             cand.score = self._score(cand, mood)
             candidates.append(cand)
@@ -81,6 +85,7 @@ class Attention:
         unseen_boost = min(1.0, c.unseen / 5.0) * 0.6
         op_boost = max(-1.0, min(1.0, c.opinion / 50.0)) * 0.4
         imp_boost = min(1.0, c.importance / 10.0) * 0.3
+        heat_boost = c.heat * 0.5
         mood_pen = 0.0
         if c.kind in (ChatKind.GROUP.value, ChatKind.SUPERGROUP.value):
             mood_pen -= (1 - mood.energy) * 0.3 * (1 - self.p.traits.get("extraversion", 0.5))
@@ -88,4 +93,4 @@ class Attention:
             mood_pen -= 0.3
         if mood.fatigue > 0.7:
             mood_pen -= 0.2
-        return bonus + unseen_boost + op_boost + imp_boost + mood_pen
+        return bonus + unseen_boost + op_boost + imp_boost + heat_boost + mood_pen

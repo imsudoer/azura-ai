@@ -42,6 +42,7 @@ class IntentEngine:
         trigger: TriggerHit,
         mood: MoodView,
         in_private: bool,
+        heat: float = 0.0,
     ) -> ReplyDecision:
         """Decide what to do about an incoming message."""
         t = self.p.traits
@@ -67,6 +68,7 @@ class IntentEngine:
         base += t["talkativeness"] * 0.20 - (1 - t["social_battery"]) * 0.15
         base += t["extraversion"] * 0.10
         base += u_urg * 0.45
+        base += heat * 0.25
         base += (op_user / 100.0) * 0.20
         base += (op_chat / 100.0) * 0.10
         if prox == Proximity.CLOSE:
