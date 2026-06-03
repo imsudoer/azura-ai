@@ -244,17 +244,7 @@ async def embed(*, model: str, inputs: list[str]) -> list[list[float]]:
 
     try:
         r = await _with_retries(call_batch)
-        vecs = []
-        for d in r.data:
-            raw = d.embedding
-            log.info(
-                "embed result: type={} len={} sample={}",
-                type(raw).__name__,
-                len(raw) if hasattr(raw, '__len__') else '?',
-                str(raw)[:120],
-            )
-            vecs.append(_coerce_embedding(raw, expected_dim))
-        return vecs
+        return [_coerce_embedding(d.embedding, expected_dim) for d in r.data]
     except Exception as e:
         log.warning("embed batch failed ({}), trying per-input", e)
 
