@@ -237,7 +237,7 @@ async def embed(*, model: str, inputs: list[str]) -> list[list[float]]:
         async with _httpx.AsyncClient(timeout=60.0) as h:
             resp = await h.post(url, headers=headers, json=body)
         if resp.status_code >= 400:
-            raise APIError(f"embed {resp.status_code}: {resp.text[:500]}")
+            raise RuntimeError(f"embed {resp.status_code}: {resp.text[:500]}")
         data = resp.json().get("data", [])
         return [_coerce_embedding(d.get("embedding", [])) for d in data]
 
