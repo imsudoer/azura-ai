@@ -191,70 +191,34 @@ def _repair_truncated_json(s: str) -> dict | None:
         return None
 
 
-import base64
-import struct
-
-
-def _decode_b64_float32(s: str) -> list[float]:
-    raw = base64.b64decode(s)
-    n = len(raw) // 4
-    return list(struct.unpack(f"{n}f", raw))
-
-
-def _decode_b64_int8(s: str) -> list[float]:
-    raw = base64.b64decode(s)
-    vals = struct.unpack(f"{len(raw)}b", raw)
-    return [v / 127.0 for v in vals]
-
-
-def _coerce_embedding(emb, expected_dim: int = 0) -> list[float]:
-    """Accept list[float] / base64-float32 / base64-int8 and return list[float].
-
-    Uses expected_dim to disambiguate: if float32 decode gives expected_dim → float32;
-    otherwise try int8 (1 byte per dim).
-    """
-    if isinstance(emb, str):
-        raw = base64.b64decode(emb)
-        if expected_dim > 0 and len(raw) == expected_dim:
-            return _decode_b64_int8(emb)
-        if expected_dim > 0 and len(raw) == expected_dim * 4:
-            return _decode_b64_float32(emb)
-        for decoder in (_decode_b64_int8, _decode_b64_float32):
-            try:
-                v = decoder(emb)
-                if v:
-                    return v
-            except Exception:
-                continue
-        return []
-    return list(emb)
-
-
 async def embed(*, model: str, inputs: list[str]) -> list[list[float]]:
     """Embeddings via OpenAI-compatible /embeddings.
 
-    Strategy: batch first; on failure per-input.
+    Explicitly requests encoding_format='float' so the router always
+    returns a plain list[float] per embedding. Batch first, per-input fallback.
     """
-    s = get_settings()
-    expected_dim = s.embed_dim
     cli = get_client()
 
     async def call_batch():
-        return await cli.embeddings.create(model=model, input=inputs)
+        return await cli.embeddings.create(
+            model=model, input=inputs, encoding_format="float",
+        )
 
     try:
         r = await _with_retries(call_batch)
-        return [_coerce_embedding(d.embedding, expected_dim) for d in r.data]
+        return [list(d.embedding) for d in r.data]
     except Exception as e:
         log.warning("embed batch failed ({}), trying per-input", e)
 
     out: list[list[float]] = []
     for text in inputs:
         async def call_one(t=text):
-            return await cli.embeddings.create(model=model, input=t)
+            return await cli.embeddings.create(
+                model=model, input=t, encoding_format="float",
+            )
         try:
             r = await _with_retries(call_one)
-            out.append(_coerce_embedding(r.data[0].embedding, expected_dim))
+            out.append(list(r.data[0].embedding))
         except Exception as e:
             log.warning("embed per-input failed ({}), skipping", e)
             out.append([])
