@@ -112,9 +112,10 @@ class Dispatcher:
 
     async def on_raw_update(self, client: Client, update, users, chats) -> None:
         """Catch UpdateUserTyping / UpdateChatUserTyping to feed the typing watcher."""
+        cls_name = update.__class__.__name__
+        log.trace("raw update: {}", cls_name) if hasattr(log, "trace") else log.debug("raw update: {}", cls_name)
         if self.typing_watcher is None:
             return
-        cls_name = update.__class__.__name__
         if cls_name not in ("UpdateUserTyping", "UpdateChatUserTyping", "UpdateChannelUserTyping"):
             return
         try:
@@ -565,7 +566,7 @@ class Dispatcher:
                 msgs = [t for t in messages if t]
                 total_chars = sum(len(m) for m in msgs)
                 approx_secs = max(15.0, min(90.0, total_chars / 12.0 + 10.0))
-                await go_online_briefly(client, seconds=approx_secs)
+                await go_online_briefly(client, seconds=approx_secs, reason=f"op.direct.chat={chat_id}")
 
                 from azura.humanize.typing import type_with_ticks
                 import random as _random

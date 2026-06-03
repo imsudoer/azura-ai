@@ -111,7 +111,7 @@ class Reader:
 
         try:
             from azura.telegram.tg_presence import go_online_briefly
-            await go_online_briefly(self.c, seconds=15.0)
+            await go_online_briefly(self.c, seconds=15.0, reason=f"reader.open.chat={choice.chat_id}.unseen={unseen}")
             att = await self.memory.repos.attention.start(choice.chat_id)
             await self.memory.repos.s.commit()
             await self.c.read_chat_history(choice.chat_id)

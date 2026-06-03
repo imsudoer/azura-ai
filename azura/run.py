@@ -87,6 +87,17 @@ async def _amain() -> int:
     from azura.telegram.typing_watcher import TypingWatcher
 
     async def _on_orphan_typing(chat_id: int, user_id: int, duration: float) -> None:
+        async with sm() as ks:
+            from azura.db.repo import Repos as _R
+            from azura.memory.service import MemoryService as _MS
+            _r = _R(ks); _m = _MS(_r)
+            cur = await PresenceEngine(persona, _m, rng=rng).current()
+        if cur.state.value in ("asleep", "offline", "afk", "busy"):
+            log.info(
+                "orphan typing chat={} user={} duration={:.1f}s SKIP (presence={})",
+                chat_id, user_id, duration, cur.state.value,
+            )
+            return
         log.info(
             "orphan typing chat={} user={} duration={:.1f}s",
             chat_id, user_id, duration,
@@ -185,11 +196,47 @@ async def _amain() -> int:
 
     from azura.telegram.tg_presence import PresenceKeeper, force_offline
     try:
-        await force_offline(client)
+        await force_offline(client, reason="boot")
     except Exception:
         log.exception("initial force_offline failed")
     presence_keeper = PresenceKeeper(client, interval_s=20.0)
     await presence_keeper.start()
+
+    _trace_log = get_logger("tg.trace")
+
+    def _wrap_call(name: str, fn):
+        async def wrapped(*args, **kwargs):
+            try:
+                _trace_log.info(
+                    "client.{}({}) called", name,
+                    ", ".join(
+                        [repr(a)[:60] for a in args]
+                        + [f"{k}={v!r}"[:60] for k, v in kwargs.items()]
+                    )[:300],
+                )
+            except Exception:
+                pass
+            return await fn(*args, **kwargs)
+        return wrapped
+
+    for _name in (
+        "read_chat_history",
+        "send_chat_action",
+        "get_chat_history",
+        "get_chat",
+        "get_chat_member",
+        "get_dialogs",
+        "send_reaction",
+        "send_message",
+        "edit_message_text",
+        "delete_messages",
+        "resolve_peer",
+    ):
+        if hasattr(client, _name):
+            try:
+                setattr(client, _name, _wrap_call(_name, getattr(client, _name)))
+            except Exception:
+                log.exception("wrap {} failed", _name)
 
     await scheduler.start()
     await reader_loop.start()

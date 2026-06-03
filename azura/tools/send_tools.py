@@ -128,7 +128,7 @@ def build(ctx: ToolContext) -> list[ToolSpec]:
             return {"error": "need chat_id, message_id, emoji"}
         try:
             from azura.telegram.tg_presence import go_online_briefly
-            await go_online_briefly(client, seconds=20.0)
+            await go_online_briefly(client, seconds=20.0, reason=f"react.chat={cid}")
         except Exception:
             pass
         try:

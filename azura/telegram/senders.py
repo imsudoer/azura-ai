@@ -95,7 +95,7 @@ class Sender:
 
         await self.bp.gate(chat_id)
         from azura.telegram.tg_presence import go_online_briefly
-        await go_online_briefly(self.c, seconds=max(45.0, plan.pre_read_s + plan.pre_type_s + plan.type_burst_s + 30.0))
+        await go_online_briefly(self.c, seconds=max(45.0, plan.pre_read_s + plan.pre_type_s + plan.type_burst_s + 30.0), reason=f"sender.reply.chat={chat_id}")
 
         log.info(
             "reply gate chat={} pre_read={:.1f}s pre_type={:.1f}s burst={:.1f}s parts={} chars={}",
@@ -154,7 +154,7 @@ class Sender:
             pass
         try:
             from azura.telegram.tg_presence import go_online_briefly
-            await go_online_briefly(self.c, seconds=20.0)
+            await go_online_briefly(self.c, seconds=20.0, reason=f"sender.tail.chat={chat_id}")
         except Exception:
             pass
         return SendResult(
