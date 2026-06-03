@@ -80,6 +80,8 @@ class Reader:
         await asyncio.sleep(self.rng.uniform(0.3, 1.6))
 
         try:
+            from azura.telegram.tg_presence import go_online_briefly
+            await go_online_briefly(self.c, seconds=15.0)
             att = await self.memory.repos.attention.start(choice.chat_id)
             await self.memory.repos.s.commit()
             await self.c.read_chat_history(choice.chat_id)

@@ -265,40 +265,34 @@ async def _compose_operator_reply(
 
 
 async def _send_with_typing(client: Client, chat_id: int, messages: list[str]) -> None:
-    """Send 1..N messages with realistic typing keepalive and per-message random delays."""
+    """Send 1..N messages with realistic typing (with interruptions on long bursts)."""
     from pyrogram.enums import ChatAction
+    from azura.humanize.typing import type_with_ticks
     import asyncio as _asyncio
     import random as _random
     if not messages:
         return
 
-    async def _keep_typing():
-        while True:
-            try:
-                await client.send_chat_action(chat_id, ChatAction.TYPING)
-            except Exception:
-                pass
-            await _asyncio.sleep(3.0)
+    async def _ping():
+        try:
+            await client.send_chat_action(chat_id, ChatAction.TYPING)
+        except Exception:
+            pass
 
     for idx, text in enumerate(messages):
         text = (text or "").strip()
         if not text:
             continue
         chars = len(text)
-        type_s = max(0.8, min(4.5, chars / 22.0)) * _random.uniform(0.7, 1.3)
-        keep = _asyncio.create_task(_keep_typing())
-        try:
-            await _asyncio.sleep(type_s)
-            await client.send_message(chat_id, text)
-        finally:
-            keep.cancel()
-            try:
-                await keep
-            except BaseException:
-                pass
+        type_s = max(0.8, min(7.0, chars / 18.0)) * _random.uniform(0.75, 1.35)
+        log.info("op typing burst chat={} chars={} secs={:.1f}", chat_id, chars, type_s)
+        await type_with_ticks(
+            chat_id=chat_id, total_seconds=type_s, keepalive=lambda _cid: _ping(),
+        )
+        await client.send_message(chat_id, text)
         if idx + 1 < len(messages):
             next_len = len(messages[idx + 1])
-            gap = max(0.4, min(2.0, next_len / 80.0)) * _random.uniform(0.6, 1.4)
+            gap = max(0.4, min(2.5, next_len / 70.0)) * _random.uniform(0.6, 1.5)
             await _asyncio.sleep(gap)
 
 

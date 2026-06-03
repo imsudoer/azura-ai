@@ -60,12 +60,7 @@ class PresenceEngine:
                 f"→ {state.value}" + (f" ({reason})" if reason else ""),
                 kind="presence",
             )
-        if self.tg is not None:
-            try:
-                from azura.telegram.tg_presence import apply_to_telegram
-                await apply_to_telegram(self.tg, state)
-            except Exception:
-                pass
+
         cur = await self.m.repos.presence.current()
         assert cur is not None
         return PresenceView(

@@ -83,7 +83,7 @@ class Sender:
         if not parts:
             return SendResult(0, 1, {})
 
-        if self.style.too_similar(clean):
+        if self.style.too_similar(clean, chat_id=chat_id):
             log.info("style-diversity blocked chat={} (overlap)", chat_id)
             return SendResult(0, len(parts), {})
 
@@ -94,6 +94,8 @@ class Sender:
         )
 
         await self.bp.gate(chat_id)
+        from azura.telegram.tg_presence import go_online_briefly
+        await go_online_briefly(self.c, seconds=max(45.0, plan.pre_read_s + plan.pre_type_s + plan.type_burst_s + 30.0))
         if plan.pre_read_s > 0:
             await asyncio.sleep(plan.pre_read_s)
 
@@ -116,7 +118,7 @@ class Sender:
             if i == 0 and reply_to is not None:
                 kwargs["reply_to_message_id"] = reply_to
             await self.c.send_message(**kwargs)
-            self.style.add(text_to_type)
+            self.style.add(text_to_type, chat_id=chat_id)
             sent += 1
             if i < len(between):
                 await asyncio.sleep(between[i])
@@ -133,6 +135,11 @@ class Sender:
         await asyncio.sleep(plan.after_send_s)
         try:
             await self.c.read_chat_history(chat_id)
+        except Exception:
+            pass
+        try:
+            from azura.telegram.tg_presence import go_online_briefly
+            await go_online_briefly(self.c, seconds=20.0)
         except Exception:
             pass
         return SendResult(

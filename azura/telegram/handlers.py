@@ -302,6 +302,8 @@ class Dispatcher:
             "urgency": round(urgency(trig), 2),
             "presence": presence.state.value,
             "clock_phase": clk.phase,
+            "is_forwarded": bool(getattr(msg, "forward_origin", None)),
+            "avoid_recent": self.style.recent_texts(chat_id=msg.chat.id, limit=8),
         }
         if is_operator:
             op_name = (msg.from_user.first_name if msg.from_user else "друг") or "друг"
@@ -361,6 +363,7 @@ class Dispatcher:
         if partial:
             async def _direct_sender(chat_id, messages, opts):
                 from pyrogram.enums import ChatAction
+                from azura.telegram.tg_presence import go_online_briefly
                 import asyncio as _asyncio
                 target = chat_id
                 if isinstance(target, str) and not target.lstrip("-").isdigit():
@@ -369,40 +372,35 @@ class Dispatcher:
                 last_id = None
                 resolved_id: int | None = None
                 msgs = [t for t in messages if t]
+                total_chars = sum(len(m) for m in msgs)
+                approx_secs = max(15.0, min(90.0, total_chars / 12.0 + 10.0))
+                await go_online_briefly(client, seconds=approx_secs)
 
-                async def _keep_typing(cid):
-                    """Re-issue TYPING every 3s so the indicator never expires."""
-                    n = 0
-                    while True:
-                        try:
-                            await client.send_chat_action(cid, ChatAction.TYPING)
-                            n += 1
-                            if n == 1:
-                                log.info("typing started chat={}", cid)
-                        except Exception as e:
-                            log.warning("send_chat_action failed chat={} err={}", cid, e)
-                        await _asyncio.sleep(3.0)
-
+                from azura.humanize.typing import type_with_ticks
                 import random as _random
+
+                async def _ping_typing(cid):
+                    try:
+                        await client.send_chat_action(cid, ChatAction.TYPING)
+                    except Exception as e:
+                        log.debug("send_chat_action failed chat={} err={}", cid, e)
 
                 def _type_delay_for(text):
                     chars = len(text)
-                    base = max(0.8, min(4.5, chars / 22.0))
-                    return base * _random.uniform(0.7, 1.3)
+                    base = max(0.8, min(7.0, chars / 18.0))
+                    return base * _random.uniform(0.75, 1.35)
 
                 for idx, text in enumerate(msgs):
                     typing_target = resolved_id if resolved_id is not None else target
                     type_s = _type_delay_for(text)
-                    keep = _asyncio.create_task(_keep_typing(typing_target))
-                    try:
-                        await _asyncio.sleep(type_s)
-                        m = await client.send_message(target, text)
-                    finally:
-                        keep.cancel()
-                        try:
-                            await keep
-                        except BaseException:
-                            pass
+                    log.info(
+                        "typing burst chat={} chars={} secs={:.1f}",
+                        typing_target, len(text), type_s,
+                    )
+                    await type_with_ticks(
+                        chat_id=typing_target, total_seconds=type_s, keepalive=_ping_typing,
+                    )
+                    m = await client.send_message(target, text)
                     sent += 1
                     last_id = getattr(m, "id", None)
                     if resolved_id is None and m and getattr(m, "chat", None):
@@ -410,7 +408,7 @@ class Dispatcher:
                         target = resolved_id
                     if idx + 1 < len(msgs):
                         next_len = len(msgs[idx + 1])
-                        gap = max(0.4, min(2.0, next_len / 80.0)) * _random.uniform(0.6, 1.4)
+                        gap = max(0.4, min(2.5, next_len / 70.0)) * _random.uniform(0.6, 1.5)
                         await _asyncio.sleep(gap)
                 if resolved_id is not None:
                     try:

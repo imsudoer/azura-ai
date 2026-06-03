@@ -1,74 +1,71 @@
-"""Push the persona's internal presence into the Telegram account status.
+"""Telegram-visible online status: offline-by-default, brief online windows.
 
-Userbots default to "online" the moment they receive any update from the
-server. To convincingly stay offline we need to:
-  1. send `account.updateStatus(offline=True)` whenever we want offline;
-  2. KEEP RE-SENDING it on a tight interval, otherwise Telegram re-marks
-     the account online as soon as the next update is consumed.
+Internal `Presence` (asleep / online / afk / busy) is for behaviour logic.
+What other Telegram users SEE is a separate concern: account.updateStatus.
 
-This module exposes:
-  - `apply_to_telegram(client, state)` for one-shot updates (kept for compat);
-  - `PresenceKeeper`, a background loop that re-asserts offline every 25s
-     while presence is asleep/offline/afk.
+Strategy here: keep Telegram status OFFLINE by default. Only flip to ONLINE
+for short windows around real actions (reading, typing, sending). After a
+short tail (`online_tail_s`) the keeper re-asserts offline.
 """
 from __future__ import annotations
 
 import asyncio
-from typing import Awaitable, Callable
+import time
 
 from pyrogram import Client
 from pyrogram.raw.functions.account import UpdateStatus
 
-from azura.constants import Presence
 from azura.utils.log import get_logger
 
 log = get_logger("tg.presence")
 
 
-_VISIBLE_ONLINE = {Presence.ONLINE, Presence.BUSY}
+_state_lock = asyncio.Lock()
+_online_until: float = 0.0
+_last_pushed: bool | None = None  # None = unknown, True = currently offline, False = online
 
 
-def is_offline_state(state: Presence) -> bool:
-    return state not in _VISIBLE_ONLINE
-
-
-async def apply_to_telegram(client: Client, state: Presence) -> None:
-    """One-shot push of state to Telegram.
-
-    Sends `account.updateStatus(offline=True)` for ASLEEP/OFFLINE/AFK,
-    and `offline=False` for ONLINE/BUSY.
-    """
-    if client is None:
-        return
-    offline = is_offline_state(state)
+async def _push(client: Client, offline: bool) -> None:
+    global _last_pushed
     try:
         await client.invoke(UpdateStatus(offline=offline))
-        log.info("tg status -> {} ({})", "offline" if offline else "online", state.value)
+        if _last_pushed != offline:
+            log.info("tg status -> {}", "offline" if offline else "online")
+        _last_pushed = offline
     except Exception as e:
-        log.warning("UpdateStatus failed: {}", e)
+        log.warning("UpdateStatus(offline={}) failed: {}", offline, e)
+
+
+async def go_online_briefly(client: Client, *, seconds: float = 45.0) -> None:
+    """Mark Telegram online; auto-offline scheduled `seconds` later."""
+    global _online_until
+    if client is None:
+        return
+    async with _state_lock:
+        _online_until = max(_online_until, time.monotonic() + seconds)
+        await _push(client, offline=False)
+
+
+async def force_offline(client: Client) -> None:
+    """Force offline immediately and clear the online window."""
+    global _online_until
+    if client is None:
+        return
+    async with _state_lock:
+        _online_until = 0.0
+        await _push(client, offline=True)
 
 
 class PresenceKeeper:
-    """Background loop that keeps Telegram status in sync with internal state.
+    """Background loop that re-asserts the desired Telegram visibility.
 
-    While the persona is in an offline-equivalent state, re-issues
-    `updateStatus(offline=True)` every `interval_s` seconds (default 25) so
-    that incoming updates can't flip the visible status back to "online".
-
-    When she becomes ONLINE/BUSY, pings `updateStatus(offline=False)` once
-    and stops re-asserting (Telegram will keep her online naturally via
-    received updates).
+    Behaviour: every `interval_s` checks if we're past the online window
+    and (re-)asserts offline. While in an online window it does nothing
+    (the per-action `go_online_briefly` already set offline=False).
     """
 
-    def __init__(
-        self,
-        client: Client,
-        get_state: Callable[[], Awaitable[Presence]],
-        *,
-        interval_s: float = 25.0,
-    ) -> None:
+    def __init__(self, client: Client, *, interval_s: float = 20.0) -> None:
         self.c = client
-        self.get_state = get_state
         self.interval = interval_s
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
@@ -86,25 +83,21 @@ class PresenceKeeper:
             except BaseException:
                 pass
             self._task = None
+        try:
+            await force_offline(self.c)
+        except Exception:
+            pass
 
     async def _loop(self) -> None:
-        last: bool | None = None
+        try:
+            await force_offline(self.c)
+        except Exception:
+            pass
         try:
             while not self._stop.is_set():
                 try:
-                    state = await self.get_state()
-                    offline = is_offline_state(state)
-                    if offline:
-                        try:
-                            await self.c.invoke(UpdateStatus(offline=True))
-                        except Exception as e:
-                            log.warning("keeper UpdateStatus(offline) failed: {}", e)
-                    elif last is not False:
-                        try:
-                            await self.c.invoke(UpdateStatus(offline=False))
-                        except Exception as e:
-                            log.warning("keeper UpdateStatus(online) failed: {}", e)
-                    last = offline
+                    if time.monotonic() >= _online_until:
+                        await _push(self.c, offline=True)
                 except Exception:
                     log.exception("presence keeper tick failed")
                 try:

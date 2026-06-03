@@ -30,3 +30,19 @@ class ToolContext:
     web_searcher: Callable[[str], Awaitable[list[dict]]] | None = None
     web_fetcher: Callable[[str], Awaitable[str]] | None = None
     _tg_client: Any = None
+    _sent_hashes: set | None = None
+
+    def remember_sent(self, chat_id: int, msgs: list[str]) -> None:
+        if self._sent_hashes is None:
+            self._sent_hashes = set()
+        for m in msgs:
+            key = (chat_id, (m or "").strip().lower())
+            self._sent_hashes.add(key)
+
+    def is_duplicate(self, chat_id: int, msgs: list[str]) -> bool:
+        if not self._sent_hashes:
+            return False
+        return any(
+            (chat_id, (m or "").strip().lower()) in self._sent_hashes
+            for m in msgs if str(m).strip()
+        )

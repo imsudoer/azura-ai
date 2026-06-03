@@ -135,6 +135,39 @@ class Agent:
         return AgentResult(messages=[], actions=actions, tool_calls=tool_calls)
 
 
+_META_PATTERNS = (
+    "i'll stay silent", "i will stay silent", "i won't reply", "i won't respond",
+    "not addressed to me", "not directed at me", "i wasn't mentioned",
+    "the trigger shows", "the trigger is", "trigger:", "intent:", "decision:",
+    "i have no reason to", "i'll skip", "i'll ignore", "i'll not engage",
+    "as the persona", "as alice", "i am the persona", "in character",
+    "this is a tense", "this is a group chat", "in a supergroup",
+    "stranger in", "no name call", "no username mention", "no reply to me",
+    "silent is fine", "silence is fine", "\"silent\"",
+    "output:", "final:", "messages:", "reply:",
+    "i should", "i shouldn't", "i need to", "my response",
+)
+
+
+def _looks_meta(line: str) -> bool:
+    """Heuristic: is this line LLM thinking-aloud (not real human text)?"""
+    s = line.strip().lower()
+    if not s:
+        return True
+    if len(s) > 220 and any(p in s for p in _META_PATTERNS):
+        return True
+    for p in _META_PATTERNS:
+        if s.startswith(p) or f". {p}" in s or f"— {p}" in s or f"- {p}" in s:
+            return True
+    eng_letters = sum(1 for ch in s if "a" <= ch <= "z")
+    rus_letters = sum(1 for ch in s if "а" <= ch <= "я" or ch == "ё")
+    if eng_letters > 40 and rus_letters == 0 and (
+        " i " in f" {s} " or s.startswith("i ") or " the " in s
+    ):
+        return True
+    return False
+
+
 def _split_final(text: str) -> list[str]:
     """Final output may be a JSON list of strings or a plain string with \\n splits."""
     s = text.strip()
@@ -142,8 +175,10 @@ def _split_final(text: str) -> list[str]:
         try:
             out = orjson.loads(s)
             if isinstance(out, list):
-                return [str(x).strip() for x in out if str(x).strip()]
+                cleaned = [str(x).strip() for x in out if str(x).strip()]
+                return [m for m in cleaned if not _looks_meta(m)]
         except Exception:
             pass
     parts = [p.strip() for p in s.split("\n\n") if p.strip()]
-    return parts or [s]
+    parts = [p for p in parts if not _looks_meta(p)]
+    return parts or ([] if _looks_meta(s) else [s])

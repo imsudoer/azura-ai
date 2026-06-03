@@ -163,34 +163,12 @@ async def _amain() -> int:
     except Exception:
         log.exception("account bootstrap failed (continuing)")
 
+    from azura.telegram.tg_presence import PresenceKeeper, force_offline
     try:
-        async with sm() as _boot_s:
-            from azura.db.repo import Repos as _R
-            from azura.memory.service import MemoryService as _M
-            from azura.telegram.tg_presence import apply_to_telegram as _apply
-
-            _r = _R(_boot_s)
-            _m = _M(_r)
-            _cur = await PresenceEngine(
-                persona, _m, rng=rng, tg_client=client
-            ).current()
-            await _apply(client, _cur.state)
+        await force_offline(client)
     except Exception:
-        log.exception("failed to push initial presence to telegram")
-
-    from azura.telegram.tg_presence import PresenceKeeper
-
-    async def _get_state():
-        async with sm() as ks:
-            from azura.db.repo import Repos as _R2
-            from azura.memory.service import MemoryService as _M2
-
-            _r2 = _R2(ks)
-            _m2 = _M2(_r2)
-            v = await PresenceEngine(persona, _m2, rng=rng).current()
-            return v.state
-
-    presence_keeper = PresenceKeeper(client, _get_state, interval_s=10.0)
+        log.exception("initial force_offline failed")
+    presence_keeper = PresenceKeeper(client, interval_s=20.0)
     await presence_keeper.start()
 
     await scheduler.start()
