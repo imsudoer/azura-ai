@@ -199,10 +199,15 @@ async def _amain() -> int:
         await force_offline(client, reason="boot")
     except Exception:
         log.exception("initial force_offline failed")
-    presence_keeper = PresenceKeeper(client, interval_s=20.0)
+    presence_keeper = PresenceKeeper(client, interval_s=10.0)
     await presence_keeper.start()
 
     _trace_log = get_logger("tg.trace")
+
+    from azura.telegram.tg_presence import _online_until as _ou
+    import time as _time_mod
+
+    _NON_CLOAKING_CALLS = frozenset({"send_message", "send_chat_action", "send_reaction", "edit_message_text"})
 
     def _wrap_call(name: str, fn):
         async def wrapped(*args, **kwargs):
@@ -216,9 +221,18 @@ async def _amain() -> int:
                 )
             except Exception:
                 pass
-            return await fn(*args, **kwargs)
+            result = await fn(*args, **kwargs)
+            if name not in _NON_CLOAKING_CALLS:
+                try:
+                    from azura.telegram.tg_presence import _online_until
+                    if _time_mod.monotonic() >= _online_until:
+                        await client.invoke(UpdateStatus(offline=True))
+                except Exception:
+                    pass
+            return result
         return wrapped
 
+    from pyrogram.raw.functions.account import UpdateStatus
     for _name in (
         "read_chat_history",
         "send_chat_action",
