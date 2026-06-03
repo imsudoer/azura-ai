@@ -60,38 +60,37 @@ async def catchup_unseen(
             return 0
 
         from azura.constants import ChatKind
+        now = ts()
         candidates = []
         for c in chats:
             if c.importance <= -100:
                 continue
-            unseen = await r.messages.unseen_count(c.id)
-            if unseen == 0:
-                continue
-            heat = await chat_heat(r, c.id)
             is_private = c.kind in (ChatKind.PRIVATE.value, ChatKind.BOT.value)
+            unseen = await r.messages.unseen_count(c.id)
+            heat = await chat_heat(r, c.id)
+
+            last_incoming = await r.archive.last_incoming_ts(c.id)
+            if not last_incoming:
+                continue
+            last_self = await r.archive.last_self_ts(c.id)
+            unanswered = last_self is None or last_incoming > last_self
+            age = now - last_incoming
+
+            if not unanswered:
+                continue
+            if age > 3600:
+                continue
             if not is_private and heat < 0.5:
                 continue
+
             candidates.append((c, unseen, heat))
 
         candidates.sort(key=lambda x: (-x[2], -x[1]))
 
         for c, unseen, heat in candidates[:max_chats]:
-            last = await r.archive.last_incoming_ts(c.id)
-            if not last:
-                continue
-            age = ts() - last
-            if age > 3600:
-                log.debug("catchup skip chat={} age={}s (stale)", c.id, age)
-                continue
-
-            last_self = await r.archive.last_self_ts(c.id)
-            if last_self and last_self > last:
-                log.debug("catchup skip chat={} (we replied after them)", c.id)
-                continue
-
             log.info(
-                "catchup candidate chat={} unseen={} heat={:.2f} age={}s kind={}",
-                c.id, unseen, heat, age, c.kind,
+                "catchup candidate chat={} unseen={} heat={:.2f} kind={}",
+                c.id, unseen, heat, c.kind,
             )
 
             try:
