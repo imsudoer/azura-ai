@@ -207,10 +207,19 @@ def _decode_b64_int8(s: str) -> list[float]:
     return [v / 127.0 for v in vals]
 
 
-def _coerce_embedding(emb) -> list[float]:
-    """Accept list[float] / base64-float32 / base64-int8 and return list[float]."""
+def _coerce_embedding(emb, expected_dim: int = 0) -> list[float]:
+    """Accept list[float] / base64-float32 / base64-int8 and return list[float].
+
+    Uses expected_dim to disambiguate: if float32 decode gives expected_dim → float32;
+    otherwise try int8 (1 byte per dim).
+    """
     if isinstance(emb, str):
-        for decoder in (_decode_b64_float32, _decode_b64_int8):
+        raw = base64.b64decode(emb)
+        if expected_dim > 0 and len(raw) == expected_dim:
+            return _decode_b64_int8(emb)
+        if expected_dim > 0 and len(raw) == expected_dim * 4:
+            return _decode_b64_float32(emb)
+        for decoder in (_decode_b64_int8, _decode_b64_float32):
             try:
                 v = decoder(emb)
                 if v:
@@ -226,6 +235,8 @@ async def embed(*, model: str, inputs: list[str]) -> list[list[float]]:
 
     Strategy: batch first; on failure per-input.
     """
+    s = get_settings()
+    expected_dim = s.embed_dim
     cli = get_client()
 
     async def call_batch():
@@ -233,17 +244,27 @@ async def embed(*, model: str, inputs: list[str]) -> list[list[float]]:
 
     try:
         r = await _with_retries(call_batch)
-        return [_coerce_embedding(d.embedding) for d in r.data]
+        vecs = []
+        for d in r.data:
+            raw = d.embedding
+            log.info(
+                "embed result: type={} len={} sample={}",
+                type(raw).__name__,
+                len(raw) if hasattr(raw, '__len__') else '?',
+                str(raw)[:120],
+            )
+            vecs.append(_coerce_embedding(raw, expected_dim))
+        return vecs
     except Exception as e:
         log.warning("embed batch failed ({}), trying per-input", e)
 
     out: list[list[float]] = []
-    for s in inputs:
-        async def call_one(text=s):
-            return await cli.embeddings.create(model=model, input=text)
+    for text in inputs:
+        async def call_one(t=text):
+            return await cli.embeddings.create(model=model, input=t)
         try:
             r = await _with_retries(call_one)
-            out.append(_coerce_embedding(r.data[0].embedding))
+            out.append(_coerce_embedding(r.data[0].embedding, expected_dim))
         except Exception as e:
             log.warning("embed per-input failed ({}), skipping", e)
             out.append([])
