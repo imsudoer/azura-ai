@@ -34,7 +34,17 @@ def vec_tables_ddl(dim: int) -> tuple[str, ...]:
 
 
 async def create_vec(conn: AsyncConnection, dim: int) -> None:
-    """Create vec0 virtual tables if missing."""
+    """Create vec0 virtual tables if missing. If dim changed, drop and recreate."""
+    for table_name in ("memory_vec", "episodes_vec", "stickers_vec"):
+        try:
+            r = await conn.execute(text(
+                f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table_name}'"
+            ))
+            existing_sql = r.scalar()
+            if existing_sql and f"float[{dim}]" not in existing_sql:
+                await conn.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
+        except Exception:
+            pass
     for ddl in vec_tables_ddl(dim):
         await conn.execute(text(ddl))
 

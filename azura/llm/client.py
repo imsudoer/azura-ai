@@ -221,37 +221,29 @@ def _coerce_embedding(emb) -> list[float]:
     return list(emb)
 
 
-import httpx as _httpx
-
-
 async def embed(*, model: str, inputs: list[str]) -> list[list[float]]:
-    """Embeddings via raw HTTP POST (bypasses OpenAI SDK `user` field that Gemini rejects)."""
-    s = get_settings()
-    url = f"{s.onlysq_base_url}/embeddings"
-    headers = {"Authorization": f"Bearer {s.onlysq_api_key}", "Content-Type": "application/json"}
+    """Embeddings via OpenAI-compatible /embeddings.
 
-    async def _call(inp, enc_fmt: str | None = None) -> list[list[float]]:
-        body: dict = {"model": model, "input": inp}
-        if enc_fmt:
-            body["encoding_format"] = enc_fmt
-        async with _httpx.AsyncClient(timeout=60.0) as h:
-            resp = await h.post(url, headers=headers, json=body)
-        if resp.status_code >= 400:
-            raise RuntimeError(f"embed {resp.status_code}: {resp.text[:500]}")
-        data = resp.json().get("data", [])
-        return [_coerce_embedding(d.get("embedding", [])) for d in data]
+    Strategy: batch first; on failure per-input.
+    """
+    cli = get_client()
+
+    async def call_batch():
+        return await cli.embeddings.create(model=model, input=inputs)
 
     try:
-        return await _with_retries(lambda: _call(inputs))
+        r = await _with_retries(call_batch)
+        return [_coerce_embedding(d.embedding) for d in r.data]
     except Exception as e:
         log.warning("embed batch failed ({}), trying per-input", e)
 
     out: list[list[float]] = []
-    for text in inputs:
+    for s in inputs:
+        async def call_one(text=s):
+            return await cli.embeddings.create(model=model, input=text)
         try:
-            vecs = await _with_retries(lambda t=text: _call(t))
-            out.append(vecs[0] if vecs else [])
-            continue
+            r = await _with_retries(call_one)
+            out.append(_coerce_embedding(r.data[0].embedding))
         except Exception as e:
             log.warning("embed per-input failed ({}), skipping", e)
             out.append([])

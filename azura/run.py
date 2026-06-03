@@ -199,58 +199,23 @@ async def _amain() -> int:
         await force_offline(client, reason="boot")
     except Exception:
         log.exception("initial force_offline failed")
-    presence_keeper = PresenceKeeper(client, interval_s=10.0)
+    presence_keeper = PresenceKeeper(client, interval_s=20.0)
     await presence_keeper.start()
 
-    _trace_log = get_logger("tg.trace")
-
-    from azura.telegram.tg_presence import _online_until as _ou
-    import time as _time_mod
-
-    _NON_CLOAKING_CALLS = frozenset({"send_message", "send_chat_action", "send_reaction", "edit_message_text"})
-
-    def _wrap_call(name: str, fn):
-        async def wrapped(*args, **kwargs):
-            try:
-                _trace_log.info(
-                    "client.{}({}) called", name,
-                    ", ".join(
-                        [repr(a)[:60] for a in args]
-                        + [f"{k}={v!r}"[:60] for k, v in kwargs.items()]
-                    )[:300],
-                )
-            except Exception:
-                pass
-            result = await fn(*args, **kwargs)
-            if name not in _NON_CLOAKING_CALLS:
-                try:
-                    from azura.telegram.tg_presence import _online_until
-                    if _time_mod.monotonic() >= _online_until:
-                        await client.invoke(UpdateStatus(offline=True))
-                except Exception:
-                    pass
-            return result
-        return wrapped
-
-    from pyrogram.raw.functions.account import UpdateStatus
-    for _name in (
-        "read_chat_history",
-        "send_chat_action",
-        "get_chat_history",
-        "get_chat",
-        "get_chat_member",
-        "get_dialogs",
-        "send_reaction",
-        "send_message",
-        "edit_message_text",
-        "delete_messages",
-        "resolve_peer",
-    ):
-        if hasattr(client, _name):
-            try:
-                setattr(client, _name, _wrap_call(_name, getattr(client, _name)))
-            except Exception:
-                log.exception("wrap {} failed", _name)
+    from azura.telegram.peer_cache import install_peer_cache, warm_cache
+    install_peer_cache(client)
+    try:
+        async with sm() as _ws:
+            from azura.db.repo import Repos as _WR
+            _wr = _WR(_ws)
+            _active = await _wr.chats.all_active()
+            _ids = [c.id for c in _active]
+        if _ids:
+            from azura.telegram.tg_presence import go_online_briefly
+            await go_online_briefly(client, seconds=10.0, reason="peer_cache_warm")
+            warm_cache(client, _ids)
+    except Exception:
+        log.exception("peer cache warm failed")
 
     await scheduler.start()
     await reader_loop.start()

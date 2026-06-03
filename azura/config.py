@@ -29,8 +29,8 @@ class Settings(BaseSettings):
 
     model_reply: str = Field(default="claude-opus-4-6", alias="MODEL_REPLY")
     model_think: str = Field(default="pplx-gemini-3.1-pro", alias="MODEL_THINK")
-    model_embed: str = Field(default="gemini-embedding-001", alias="MODEL_EMBED")
-    embed_dim: int = Field(default=1536, alias="EMBED_DIM")
+    model_embed: str = Field(default="pplx-embed-v1-4b", alias="MODEL_EMBED")
+    embed_dim: int = Field(default=2560, alias="EMBED_DIM")
     embeddings_enabled: bool = Field(default=True, alias="EMBEDDINGS_ENABLED")
     model_vision: str = Field(default="", alias="MODEL_VISION")
     model_imagen: str = Field(default="phoenix-1.0", alias="MODEL_IMAGEN")

@@ -89,17 +89,6 @@ class Dispatcher:
             _wait, _max = 4.5, 9.0
         self._coalescer = Coalescer(self._coalesced_cycle, wait_s=_wait, max_wait_s=_max)
 
-    async def _cloak(self, client: Client) -> None:
-        """Re-assert offline if we're not in an explicit online window."""
-        try:
-            from azura.telegram.tg_presence import _online_until
-            import time as _tm
-            if _tm.monotonic() >= _online_until:
-                from pyrogram.raw.functions.account import UpdateStatus as _US
-                await client.invoke(_US(offline=True))
-        except Exception:
-            pass
-
     def _lock(self, chat_id: int) -> asyncio.Lock:
         lk = self._locks.get(chat_id)
         if lk is None:
@@ -120,7 +109,6 @@ class Dispatcher:
             await self._dispatch(client, message)
         except Exception:
             log.exception("dispatch failed")
-        await self._cloak(client)
 
     async def on_raw_update(self, client: Client, update, users, chats) -> None:
         """Catch UpdateUserTyping / UpdateChatUserTyping to feed the typing watcher."""
@@ -156,7 +144,6 @@ class Dispatcher:
             self.typing_watcher.note_typing(int(chat_id), int(user_id))
         except Exception:
             log.debug("on_raw_update typing parse failed", exc_info=True)
-        await self._cloak(client)
 
     async def on_edited(self, client: Client, message: Message) -> None:
         """Update both hot row and archive on an edit event."""
@@ -170,7 +157,6 @@ class Dispatcher:
                 await session.commit()
         except Exception:
             log.exception("on_edited failed")
-        await self._cloak(client)
 
     async def on_deleted(self, client: Client, messages: list[Message]) -> None:
         """Mark deleted_ts on every affected row."""
@@ -187,7 +173,6 @@ class Dispatcher:
                 await session.commit()
         except Exception:
             log.exception("on_deleted failed")
-        await self._cloak(client)
 
     async def on_reaction(self, client: Client, update) -> None:
         """Persist updated reactions on a message."""
@@ -208,7 +193,6 @@ class Dispatcher:
                 await session.commit()
         except Exception:
             log.exception("on_reaction failed")
-        await self._cloak(client)
 
     async def _dispatch(self, client: Client, msg: Message) -> None:
         if msg.outgoing or msg.from_user is None:
