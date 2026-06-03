@@ -179,7 +179,28 @@ def _looks_meta(line: str) -> bool:
     return False
 
 
-def _split_final(text: str) -> list[str]:
+def _dedup_messages(msgs: list[str]) -> list[str]:
+    """Drop messages that are too similar to an earlier one."""
+    if len(msgs) <= 1:
+        return msgs
+    kept: list[str] = [msgs[0]]
+    for m in msgs[1:]:
+        words_new = set(m.lower().split())
+        is_dup = False
+        for prev in kept:
+            words_prev = set(prev.lower().split())
+            if not words_new or not words_prev:
+                continue
+            overlap = len(words_new & words_prev) / min(len(words_new), len(words_prev))
+            if overlap > 0.6:
+                is_dup = True
+                break
+        if not is_dup:
+            kept.append(m)
+    return kept
+
+
+def _split_final(text: str, max_parts: int = 3) -> list[str]:
     """Final output may be a JSON list of strings or a plain string with \\n splits."""
     s = text.strip()
     if s.startswith("[") and s.endswith("]"):
@@ -187,9 +208,12 @@ def _split_final(text: str) -> list[str]:
             out = orjson.loads(s)
             if isinstance(out, list):
                 cleaned = [str(x).strip() for x in out if str(x).strip()]
-                return [m for m in cleaned if not _looks_meta(m)]
+                parts = [m for m in cleaned if not _looks_meta(m)]
+                return _dedup_messages(parts)[:max_parts]
         except Exception:
             pass
     parts = [p.strip() for p in s.split("\n\n") if p.strip()]
     parts = [p for p in parts if not _looks_meta(p)]
-    return parts or ([] if _looks_meta(s) else [s])
+    parts = _dedup_messages(parts)
+    result = parts[:max_parts] or ([] if _looks_meta(s) else [s])
+    return result

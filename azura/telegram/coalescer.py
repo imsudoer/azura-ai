@@ -110,6 +110,12 @@ class Coalescer:
             slot = self._slots.get(chat_id)
             if slot is None or slot.last_msg is None:
                 return
+            if slot.runner is not None and not slot.runner.done():
+                log.debug(
+                    "coalesce timer fired but runner active chat={}, deferring to post-run",
+                    chat_id,
+                )
+                return
             msg = slot.last_msg
             count = len(slot.pending_ids)
             slot.last_msg = None
@@ -131,3 +137,26 @@ class Coalescer:
             raise
         except Exception:
             log.exception("coalesce handler failed chat={}", chat_id)
+        finally:
+            async with self._lock:
+                slot = self._slots.get(chat_id)
+                if slot and slot.last_msg is not None and slot.pending_ids:
+                    pending_msg = slot.last_msg
+                    pending_count = len(slot.pending_ids)
+                    slot.last_msg = None
+                    slot.pending_ids = []
+                    slot.first_ts = 0.0
+                    slot.runner_cancellable = True
+                    if slot.timer and not slot.timer.done():
+                        slot.timer.cancel()
+                    slot.timer = None
+                    log.info(
+                        "coalesce post-run: re-fire chat={} pending={}",
+                        chat_id, pending_count,
+                    )
+                    slot.runner = asyncio.create_task(
+                        self._run(chat_id, pending_msg, pending_count)
+                    )
+                else:
+                    if slot:
+                        slot.runner = None
