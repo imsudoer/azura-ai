@@ -191,28 +191,62 @@ def _repair_truncated_json(s: str) -> dict | None:
         return None
 
 
+import base64
+import struct
+
+
+def _decode_b64_float(s: str) -> list[float]:
+    raw = base64.b64decode(s)
+    n = len(raw) // 4
+    return list(struct.unpack(f"{n}f", raw))
+
+
+def _coerce_embedding(emb) -> list[float]:
+    """Accept either list[float] or base64 string and return list[float]."""
+    if isinstance(emb, str):
+        try:
+            return _decode_b64_float(emb)
+        except Exception:
+            return []
+    return list(emb)
+
+
 async def embed(*, model: str, inputs: list[str]) -> list[list[float]]:
     """Embeddings via OpenAI-compatible /embeddings.
 
-    OnlySq routes some embed models (e.g. gemini-embedding-001) to providers that
-    reject either batch input arrays or extra OpenAI fields like `user`. Strategy:
-    try batch first; on failure, retry per-input.
+    OnlySq router behavior varies per backend. Strategy: try batch with default
+    float encoding first; on failure retry per-input; on still-failing retry with
+    explicit encoding_format='base64'.
     """
     cli = get_client()
 
-    async def call_batch():
-        return await cli.embeddings.create(model=model, input=inputs)
+    async def call_batch(**kw):
+        return await cli.embeddings.create(model=model, input=inputs, **kw)
 
     try:
         r = await _with_retries(call_batch)
-        return [d.embedding for d in r.data]
+        return [_coerce_embedding(d.embedding) for d in r.data]
     except Exception as e:
-        log.warning("embed batch failed ({}), falling back to per-input", e)
+        log.warning("embed batch (float) failed ({}), trying per-input", e)
 
     out: list[list[float]] = []
     for s in inputs:
-        async def call_one(text=s):
-            return await cli.embeddings.create(model=model, input=text)
-        r = await _with_retries(call_one)
-        out.append(r.data[0].embedding)
+        async def call_one(text=s, **kw):
+            return await cli.embeddings.create(model=model, input=text, **kw)
+        try:
+            r = await _with_retries(call_one)
+            out.append(_coerce_embedding(r.data[0].embedding))
+            continue
+        except Exception as e:
+            log.warning("embed one (float) failed ({}), trying base64", e)
+        try:
+            r = await _with_retries(
+                lambda text=s: cli.embeddings.create(
+                    model=model, input=text, encoding_format="base64",
+                )
+            )
+            out.append(_coerce_embedding(r.data[0].embedding))
+        except Exception as e:
+            log.warning("embed one (base64) failed ({}), giving up this text", e)
+            out.append([])
     return out

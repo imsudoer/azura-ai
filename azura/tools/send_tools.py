@@ -115,7 +115,9 @@ def build(ctx: ToolContext) -> list[ToolSpec]:
         return res
 
     async def react_to_message(args: dict) -> dict:
-        """Put a single-emoji reaction on a message."""
+        """Put a single-emoji reaction on a message, with a brief read+think+react human pause."""
+        import asyncio as _asyncio
+        import random as _random
         client = ctx._tg_client
         if client is None:
             return {"error": "no telegram client"}
@@ -125,8 +127,20 @@ def build(ctx: ToolContext) -> list[ToolSpec]:
         if not cid or not mid or not emoji:
             return {"error": "need chat_id, message_id, emoji"}
         try:
-            await client.send_reaction(cid, int(mid), emoji)
-            return {"ok": True}
+            from azura.telegram.tg_presence import go_online_briefly
+            await go_online_briefly(client, seconds=20.0)
+        except Exception:
+            pass
+        try:
+            pause = _random.uniform(1.2, 4.5)
+            await _asyncio.sleep(pause)
+            try:
+                await client.read_chat_history(int(cid))
+            except Exception:
+                pass
+            await _asyncio.sleep(_random.uniform(0.4, 1.8))
+            await client.send_reaction(int(cid), int(mid), emoji)
+            return {"ok": True, "paused_s": round(pause, 2)}
         except Exception as e:
             return {"error": f"{type(e).__name__}: {e}"}
 

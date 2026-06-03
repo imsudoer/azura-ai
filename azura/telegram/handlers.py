@@ -259,14 +259,58 @@ class Dispatcher:
             await record_message(self.client, r, msg, chat_kind=chat_kind, is_self=bool(msg.outgoing))
             await session.commit()
 
+    async def _fetch_my_chat_role(self, client, chat_id: int, chat_kind: str, my_id: int) -> dict:
+        """Return {status, can_send_text, can_send_media, can_send_polls, can_invite, is_muted}.
+
+        Caches per chat for 5 minutes.
+        """
+        from azura.utils.timez import ts as _ts
+        if not hasattr(self, "_role_cache"):
+            self._role_cache: dict[int, tuple[int, dict]] = {}
+        now = _ts()
+        cached = self._role_cache.get(chat_id)
+        if cached and now - cached[0] < 300:
+            return cached[1]
+        out: dict = {"status": "member"}
+        if chat_kind in ("private", "bot"):
+            out = {"status": "self"}
+            self._role_cache[chat_id] = (now, out)
+            return out
+        try:
+            cm = await client.get_chat_member(chat_id, my_id)
+            status = getattr(getattr(cm, "status", None), "value", None) or str(getattr(cm, "status", "member"))
+            perms = getattr(cm, "permissions", None) or getattr(cm, "privileges", None)
+            def _p(attr):
+                return bool(getattr(perms, attr, True)) if perms is not None else True
+            out = {
+                "status": status,
+                "can_send_text": _p("can_send_messages"),
+                "can_send_media": _p("can_send_media_messages") and _p("can_send_photos"),
+                "can_send_polls": _p("can_send_polls"),
+                "can_invite": _p("can_invite_users"),
+                "is_admin": status in ("administrator", "creator"),
+            }
+        except Exception as e:
+            log.debug("get_chat_member failed chat={} err={}", chat_id, e)
+        self._role_cache[chat_id] = (now, out)
+        return out
+
     async def _maybe_read_if_awaiting(self, msg: Message) -> None:
         """If she sent a message in this chat within the last AWAITING_S seconds,
-        treat this incoming as a follow-up and mark read immediately.
+        treat this incoming as a follow-up and mark read immediately. Rate-limited
+        to at most once per chat per 30 seconds to avoid pinging activity to TG.
         """
         AWAITING_S = 180
+        RATE_LIMIT_S = 30
         from azura.utils.timez import ts as _ts
         from sqlalchemy import select, func
         from azura.db.models import ChatArchive
+        if not hasattr(self, "_awaiting_read_last"):
+            self._awaiting_read_last = {}
+        now = _ts()
+        last = self._awaiting_read_last.get(msg.chat.id, 0)
+        if now - last < RATE_LIMIT_S:
+            return
         async with self.sm() as session:
             q = (
                 select(func.max(ChatArchive.ts))
@@ -277,13 +321,14 @@ class Dispatcher:
             last_self = r.scalar()
         if not last_self:
             return
-        if _ts() - int(last_self) > AWAITING_S:
+        if now - int(last_self) > AWAITING_S:
             return
         try:
             await self.client.read_chat_history(msg.chat.id)
+            self._awaiting_read_last[msg.chat.id] = now
             log.info(
                 "awaiting-read chat={} (last_self {}s ago)",
-                msg.chat.id, _ts() - int(last_self),
+                msg.chat.id, now - int(last_self),
             )
         except Exception as e:
             log.debug("awaiting read_chat_history failed: {}", e)
@@ -335,8 +380,9 @@ class Dispatcher:
         trig = detect(persona=self.p, text=text, own_username=own_username, reply_to_self=reply_to_self)
         in_private = chat_kind in (ChatKind.PRIVATE.value, ChatKind.BOT.value)
 
+        is_operator = bool(msg.from_user and msg.from_user.id == self.s.operator_id)
+        presence_excuse = None
         if presence.state.value in ("asleep", "offline"):
-            is_operator = bool(msg.from_user and msg.from_user.id == self.s.operator_id)
             if not is_operator:
                 await session.commit()
                 return
@@ -349,15 +395,26 @@ class Dispatcher:
                 "читаю твиттер в кровати",
                 "скроллю пинтерест",
                 "проснулась от кота",
-                "смотрю резервы на youtube",
+                "смотрю ютуб в кровати",
             ]
             reason = self.rng.choice(afk_reasons)
             wake_until = _ts() + self.rng.randint(5 * 60, 15 * 60)
             presence = await presence_eng.set(
                 _P.AFK, reason=reason, until_ts=wake_until,
             )
+            presence_excuse = reason
             log.info("night dm from operator: AFK={} until={}", reason, wake_until)
-        is_operator = bool(msg.from_user and msg.from_user.id == self.s.operator_id)
+            wake_delay = self.rng.uniform(6.0, 15.0)
+            log.info("operator night-wake delay {:.1f}s", wake_delay)
+            await asyncio.sleep(wake_delay)
+        elif is_operator and presence.state.value in ("afk", "busy"):
+            presence_excuse = presence.reason or presence.state.value
+            wake_delay = self.rng.uniform(2.5, 8.0)
+            log.info(
+                "operator interrupt presence={} reason={!r} delay={:.1f}s",
+                presence.state.value, presence_excuse, wake_delay,
+            )
+            await asyncio.sleep(wake_delay)
         if is_operator:
             from azura.mind.intent import ReplyDecision
             decision = ReplyDecision(decision="reply", score=1.0, reason="operator override")
@@ -434,6 +491,9 @@ class Dispatcher:
             "is_weekend": clk.is_weekend,
             "is_forwarded": bool(getattr(msg, "forward_origin", None)),
             "avoid_recent": self.style.recent_texts(chat_id=msg.chat.id, limit=8),
+            "presence_excuse": presence_excuse,
+            "presence_reason": presence.reason,
+            "my_chat_role": await self._fetch_my_chat_role(client, msg.chat.id, chat_kind, me.id),
         }
         if is_operator:
             op_name = (msg.from_user.first_name if msg.from_user else "друг") or "друг"

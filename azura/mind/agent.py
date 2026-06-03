@@ -136,6 +136,9 @@ class Agent:
 
 
 _META_PATTERNS = (
+    "стресс подскочил", "стресс вырос", "valence=", "arousal=", "energy=",
+    "fatigue=", "stress=", "v=", "a=", "e=", "st=", "fa=",
+    "моё настроение в цифрах", "mood snapshot", "presence=",
     "i'll stay silent", "i will stay silent", "i won't reply", "i won't respond",
     "not addressed to me", "not directed at me", "i wasn't mentioned",
     "the trigger shows", "the trigger is", "trigger:", "intent:", "decision:",
@@ -149,10 +152,18 @@ _META_PATTERNS = (
 )
 
 
+import re as _re
+_NUM_METRIC_RE = _re.compile(
+    r"\b(стресс|настроение|валентность|возбуждение|энергия|усталость|фатиг|valence|arousal|energy|fatigue|stress|mood)\b[^\d\n]{0,15}\d\.?\d?"
+)
+
+
 def _looks_meta(line: str) -> bool:
     """Heuristic: is this line LLM thinking-aloud (not real human text)?"""
     s = line.strip().lower()
     if not s:
+        return True
+    if _NUM_METRIC_RE.search(s):
         return True
     if len(s) > 220 and any(p in s for p in _META_PATTERNS):
         return True
