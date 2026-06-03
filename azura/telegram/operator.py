@@ -167,11 +167,13 @@ async def _handle_nl(
         friend_first_name=friend_first_name,
         persona_voice=persona_voice,
     )
+    recent_block = await _recent_messages_block(ctx, msg.chat.id, settings.operator_id)
+    user_payload = body if not recent_block else f"{body}\n\n[recent_messages]\n{recent_block}"
     try:
         out = await think_json(
             [
                 {"role": "system", "content": sys},
-                {"role": "user", "content": body},
+                {"role": "user", "content": user_payload},
             ],
             temperature=0.2, max_tokens=500,
             response_format={"type": "json_object"},
@@ -212,6 +214,27 @@ async def _handle_nl(
     except Exception:
         pass
     return True
+
+
+async def _recent_messages_block(ctx: ToolContext, chat_id: int, operator_id: int) -> str:
+    """Compact dump of the last few messages in this chat, with msg ids, for the classifier."""
+    try:
+        rows = await ctx.memory.repos.archive.recent(chat_id, limit=12)
+    except Exception:
+        return ""
+    lines: list[str] = []
+    for row in rows[-12:]:
+        text = (row.text or row.caption or "").replace("\n", " ").strip()
+        if not text and row.kind != "text":
+            text = f"<{row.kind}>"
+        if len(text) > 160:
+            text = text[:160] + "…"
+        who = "me" if row.is_self else (
+            "friend" if row.from_id == operator_id else f"u{row.from_id}"
+        )
+        lines.append(f"msg_id={row.tg_msg_id} from={who}: {text}")
+    return "\n".join(lines)
+
 
 
 async def _compose_operator_reply(

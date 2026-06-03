@@ -121,6 +121,36 @@ def build(ctx: ToolContext) -> list[ToolSpec]:
             ],
         }
 
+    async def recent_incoming(args: dict) -> dict:
+        """Last N INCOMING (not self) messages in a chat, with msg_id and from_id.
+
+        Useful when you need a concrete message_id to react/reply to (e.g. operator
+        says 'put a reaction on any of my messages').
+        """
+        who = args.get("chat_id") or args.get("with") or args.get("user")
+        limit = int(args.get("limit", 8))
+        from_user = args.get("from_user_id")
+        cid = await _resolve_chat_id(ctx, who) if who is not None else ctx.chat_id
+        if cid is None:
+            return {"error": "specify chat_id"}
+        recent = await ctx.memory.repos.archive.recent(cid, limit=max(40, limit * 4))
+        rows = [a for a in recent if not a.is_self]
+        if from_user is not None:
+            try:
+                fu = int(from_user)
+                rows = [a for a in rows if a.from_id == fu]
+            except (TypeError, ValueError):
+                pass
+        rows = rows[-limit:]
+        return {
+            "chat_id": cid,
+            "items": [
+                {"msg_id": a.tg_msg_id, "from_id": a.from_id, "ts": a.ts,
+                 "text": (a.text or a.caption or "")[:300], "kind": a.kind}
+                for a in rows
+            ],
+        }
+
     async def chat_summary(args: dict) -> dict:
         """Quick stats + first/last messages of a chat (no LLM call, just facts)."""
         who = args.get("user") or args.get("username") or args.get("chat_id") or args.get("with")
@@ -179,6 +209,17 @@ def build(ctx: ToolContext) -> list[ToolSpec]:
                 "with": {"type": ["integer", "string"]},
                 "limit": {"type": "integer"}}},
             recent_conversation_with,
+        ),
+        make_spec(
+            "op_recent_incoming",
+            "Last N INCOMING (not self) messages in a chat with msg_id+from_id. Use to resolve 'his last message' / 'any of my messages' into a concrete message_id for reactions/replies.",
+            {"type": "object", "properties": {
+                "chat_id": {"type": ["integer", "string"]},
+                "with": {"type": ["integer", "string"]},
+                "user": {"type": ["integer", "string"]},
+                "from_user_id": {"type": "integer"},
+                "limit": {"type": "integer"}}},
+            recent_incoming,
         ),
         make_spec(
             "op_chat_summary",

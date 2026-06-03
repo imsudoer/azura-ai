@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     humanize_typing_chunk_s: float = Field(
         default=4.5, alias="HUMANIZE_TYPING_CHUNK_S"
     )
+    coalesce_wait_s: float = Field(default=4.5, alias="COALESCE_WAIT_S")
+    coalesce_max_wait_s: float = Field(default=9.0, alias="COALESCE_MAX_WAIT_S")
 
     media_max_download_mb: int = Field(default=20, alias="MEDIA_MAX_DOWNLOAD_MB")
     web_fetch_timeout_s: int = Field(default=15, alias="WEB_FETCH_TIMEOUT_S")

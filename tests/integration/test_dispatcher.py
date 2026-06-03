@@ -99,6 +99,7 @@ async def test_dispatcher_records_and_replies(db, session, persona, monkeypatch)
     msg = FakeMessage(id=1, chat=chat, from_user=user, text="hello mira",
                       date=datetime.now(timezone.utc))
     await disp.on_message(fake_client, msg)
+    await disp.drain()
 
     sent = [text for cid, text, _ in fake_client.sent_messages if cid == -1]
     assert len(sent) >= 2
@@ -140,6 +141,7 @@ async def test_dispatcher_read_only_does_not_send(db, persona, monkeypatch):
                       from_user=FakeUser(id=101, first_name="A"),
                       text="hi", date=datetime.now(timezone.utc))
     await disp.on_message(fake_client, msg)
+    await disp.drain()
 
     assert fake_client.sent_messages == []
     assert -1 in fake_client.read_history_calls
@@ -176,5 +178,6 @@ async def test_dispatcher_skips_when_asleep(db, persona, monkeypatch):
                       from_user=FakeUser(id=101, first_name="A"),
                       text="wake up", date=datetime.now(timezone.utc))
     await disp.on_message(fake_client, msg)
+    await disp.drain()
 
     assert fake_client.sent_messages == []

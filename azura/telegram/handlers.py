@@ -79,6 +79,15 @@ class Dispatcher:
         self._locks: dict[int, asyncio.Lock] = {}
         self._cooldown: dict[int, int] = {}
         self.typing_watcher = None
+        from azura.telegram.coalescer import Coalescer
+        from azura.config import get_settings as _gs
+        try:
+            _cfg = _gs()
+            _wait = float(getattr(_cfg, "coalesce_wait_s", 4.5))
+            _max = float(getattr(_cfg, "coalesce_max_wait_s", 9.0))
+        except Exception:
+            _wait, _max = 4.5, 9.0
+        self._coalescer = Coalescer(self._coalesced_cycle, wait_s=_wait, max_wait_s=_max)
 
     def _lock(self, chat_id: int) -> asyncio.Lock:
         lk = self._locks.get(chat_id)
@@ -194,9 +203,54 @@ class Dispatcher:
             await self._persist_only(msg)
             return
 
+        await self._persist_only(msg)
+
+        try:
+            await self._maybe_read_if_awaiting(msg)
+        except Exception:
+            log.debug("awaiting-read check failed", exc_info=True)
+
+        await self._coalescer.submit(msg.chat.id, msg)
+
+    async def _coalesced_cycle(self, msg: Message) -> None:
+        chat_kind = _TG_KIND.get(msg.chat.type, ChatKind.GROUP.value)
         async with self._lock(msg.chat.id):
             async with self.sm() as session:
-                await self._run_cycle(client, msg, session, chat_kind)
+                await self._run_cycle(self.client, msg, session, chat_kind)
+
+    async def drain(self) -> None:
+        """Test helper: synchronously run any pending coalesced cycle right now.
+
+        Avoids the debounce sleep so tests don't need real-time waits.
+        """
+        for chat_id, slot in list(self._coalescer._slots.items()):
+            if slot.timer is not None and not slot.timer.done():
+                slot.timer.cancel()
+                slot.timer = None
+            if slot.last_msg is not None:
+                msg = slot.last_msg
+                slot.last_msg = None
+                slot.pending_ids = []
+                slot.first_ts = 0.0
+                slot.runner_cancellable = True
+                await self._coalesced_cycle(msg)
+
+    async def wait_idle(self, timeout: float = 30.0) -> None:
+        """Test helper: block until coalescer has no pending timers/runners."""
+        import time as _t
+        end = _t.monotonic() + timeout
+        while _t.monotonic() < end:
+            await asyncio.sleep(0.05)
+            busy = False
+            for slot in list(self._coalescer._slots.values()):
+                if slot.timer is not None and not slot.timer.done():
+                    busy = True
+                    break
+                if slot.runner is not None and not slot.runner.done():
+                    busy = True
+                    break
+            if not busy:
+                return
 
     async def _persist_only(self, msg: Message) -> None:
         async with self.sm() as session:
@@ -204,6 +258,35 @@ class Dispatcher:
             chat_kind = _TG_KIND.get(msg.chat.type, ChatKind.GROUP.value)
             await record_message(self.client, r, msg, chat_kind=chat_kind, is_self=bool(msg.outgoing))
             await session.commit()
+
+    async def _maybe_read_if_awaiting(self, msg: Message) -> None:
+        """If she sent a message in this chat within the last AWAITING_S seconds,
+        treat this incoming as a follow-up and mark read immediately.
+        """
+        AWAITING_S = 180
+        from azura.utils.timez import ts as _ts
+        from sqlalchemy import select, func
+        from azura.db.models import ChatArchive
+        async with self.sm() as session:
+            q = (
+                select(func.max(ChatArchive.ts))
+                .where(ChatArchive.chat_id == msg.chat.id)
+                .where(ChatArchive.is_self.is_(True))
+            )
+            r = await session.execute(q)
+            last_self = r.scalar()
+        if not last_self:
+            return
+        if _ts() - int(last_self) > AWAITING_S:
+            return
+        try:
+            await self.client.read_chat_history(msg.chat.id)
+            log.info(
+                "awaiting-read chat={} (last_self {}s ago)",
+                msg.chat.id, _ts() - int(last_self),
+            )
+        except Exception as e:
+            log.debug("awaiting read_chat_history failed: {}", e)
 
     async def _run_cycle(self, client: Client, msg: Message, session: AsyncSession, chat_kind: str) -> None:
         r = Repos(session)
@@ -370,6 +453,7 @@ class Dispatcher:
             tools=tools, max_steps=4,
         )
         if result.messages:
+            await self._coalescer.mark_runner_committed(msg.chat.id)
             await sender.send(
                 msg.chat.id, result.messages,
                 mood=mood, clock=clk,
