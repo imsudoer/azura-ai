@@ -51,11 +51,6 @@ async def download_media(client: Client, msg: Message, kind: str) -> Path | None
     Only downloads when we're inside an explicit online window — downloading
     is an MTProto RPC call that makes the user appear 'online' to Telegram.
     """
-    import time as _tm
-    from azura.telegram.tg_presence import _online_until
-    if _tm.monotonic() >= _online_until:
-        log.debug("download_media SKIPPED (offline) chat={} msg={}", msg.chat.id, msg.id)
-        return None
     s = get_settings()
     if not _has_media(msg):
         return None
