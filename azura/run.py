@@ -207,6 +207,17 @@ async def _amain() -> int:
 
     await scheduler.start()
     await reader_loop.start()
+
+    from azura.telegram.catchup import catchup_unseen, periodic_catchup
+    try:
+        n = await catchup_unseen(client, persona, sm, rng, dispatcher._coalescer)
+        log.info("boot catchup: queued {} chats", n)
+    except Exception:
+        log.exception("boot catchup failed")
+    _catchup_task = asyncio.create_task(
+        periodic_catchup(client, persona, sm, rng, dispatcher._coalescer, stop_event, interval_s=120.0)
+    )
+
     log.info("azura-ai online — listening")
     try:
         await stop_event.wait()

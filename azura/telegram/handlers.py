@@ -347,9 +347,16 @@ class Dispatcher:
             now = _ts()
             exp = self._cooldown.get(msg.chat.id)
             if exp is not None and exp > now:
-                log.info("chat {} in cooldown ({}s left), skip LLM",
-                         msg.chat.id, exp - now)
-                return
+                from azura.mind.chat_heat import chat_heat as _cd_heat
+                _h = await _cd_heat(r, msg.chat.id)
+                if chat_kind in (ChatKind.PRIVATE.value, ChatKind.BOT.value) and _h > 0.3:
+                    log.info("chat {} cooldown BROKEN by hot private msg (heat={:.2f}, {}s left)",
+                             msg.chat.id, _h, exp - now)
+                    self._cooldown.pop(msg.chat.id, None)
+                else:
+                    log.info("chat {} in cooldown ({}s left), skip LLM",
+                             msg.chat.id, exp - now)
+                    return
             if exp is not None:
                 self._cooldown.pop(msg.chat.id, None)
 
