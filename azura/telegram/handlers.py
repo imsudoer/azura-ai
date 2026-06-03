@@ -277,6 +277,11 @@ class Dispatcher:
             out = {"status": "self"}
             self._role_cache[chat_id] = (now, out)
             return out
+        import time as _tm
+        from azura.telegram.tg_presence import _online_until
+        if _tm.monotonic() >= _online_until:
+            self._role_cache[chat_id] = (now, out)
+            return out
         try:
             cm = await client.get_chat_member(chat_id, my_id)
             status = getattr(getattr(cm, "status", None), "value", None) or str(getattr(cm, "status", "member"))
@@ -323,6 +328,14 @@ class Dispatcher:
         if not last_self:
             return
         if now - int(last_self) > AWAITING_S:
+            return
+        import time as _tm
+        from azura.telegram.tg_presence import _online_until
+        if _tm.monotonic() >= _online_until:
+            log.debug(
+                "awaiting-read SKIPPED (offline) chat={} (last_self {}s ago)",
+                msg.chat.id, now - int(last_self),
+            )
             return
         try:
             await self.client.read_chat_history(msg.chat.id)
@@ -373,7 +386,9 @@ class Dispatcher:
         mood = await mood_eng.now()
         presence = await presence_eng.current()
 
-        me = await client.get_me()
+        if not hasattr(self, "_me_cache") or self._me_cache is None:
+            self._me_cache = await client.get_me()
+        me = self._me_cache
         own_username = me.username
         text = (msg.text or msg.caption or "").strip()
         reply_to_self = bool(msg.reply_to_message and msg.reply_to_message.from_user
@@ -447,13 +462,16 @@ class Dispatcher:
                      msg.chat.id, base, decision.decision, decision.reason)
             if decision.decision == "read_only":
                 try:
-                    await client.read_chat_history(msg.chat.id)
+                    await r.messages.mark_seen(msg.chat.id, msg.id)
                 except Exception:
                     pass
             await session.commit()
             return
         if decision.decision == "react":
             try:
+                from azura.telegram.tg_presence import go_online_briefly
+                await go_online_briefly(client, seconds=15.0, reason=f"react.intent.chat={msg.chat.id}")
+                await asyncio.sleep(self.rng.uniform(1.0, 3.0))
                 await client.send_reaction(msg.chat.id, msg.id, "👀")
             except Exception:
                 pass

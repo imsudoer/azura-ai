@@ -144,7 +144,6 @@ async def test_dispatcher_read_only_does_not_send(db, persona, monkeypatch):
     await disp.drain()
 
     assert fake_client.sent_messages == []
-    assert -1 in fake_client.read_history_calls
 
 
 async def test_dispatcher_skips_when_asleep(db, persona, monkeypatch):

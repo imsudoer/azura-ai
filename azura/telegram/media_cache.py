@@ -46,7 +46,16 @@ def _candidate_filename(chat_id: int, tg_msg_id: int, kind: str, original_name: 
 
 
 async def download_media(client: Client, msg: Message, kind: str) -> Path | None:
-    """Download msg media into the cache; returns local path or None on failure / oversize."""
+    """Download msg media into the cache; returns local path or None on failure / oversize.
+
+    Only downloads when we're inside an explicit online window — downloading
+    is an MTProto RPC call that makes the user appear 'online' to Telegram.
+    """
+    import time as _tm
+    from azura.telegram.tg_presence import _online_until
+    if _tm.monotonic() >= _online_until:
+        log.debug("download_media SKIPPED (offline) chat={} msg={}", msg.chat.id, msg.id)
+        return None
     s = get_settings()
     if not _has_media(msg):
         return None
