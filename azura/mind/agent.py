@@ -151,6 +151,17 @@ _META_PATTERNS = (
     "i should", "i shouldn't", "i need to", "my response",
 )
 
+_THINKING_STARTS = (
+    "looking at", "let me", "given the", "based on", "considering",
+    "analyzing", "checking", "thinking about", "so the user",
+    "the user", "he's asking", "she's asking", "they're asking",
+    "i think", "i'll", "i need", "i want to", "i can see",
+    "from the context", "in this case", "it seems", "it looks like",
+    "wait", "ok so", "okay so", "hmm", "alright",
+    "my task", "my goal", "the question", "the message",
+    "since i", "since the", "since he", "since she",
+    "now i", "now let", "first",
+)
 
 import re as _re
 _NUM_METRIC_RE = _re.compile(
@@ -168,14 +179,20 @@ def _looks_meta(line: str) -> bool:
     if len(s) > 220 and any(p in s for p in _META_PATTERNS):
         return True
     for p in _META_PATTERNS:
-        if s.startswith(p) or f". {p}" in s or f"— {p}" in s or f"- {p}" in s:
+        if s.startswith(p) or f". {p}" in s or f"- {p}" in s:
             return True
+
     eng_letters = sum(1 for ch in s if "a" <= ch <= "z")
-    rus_letters = sum(1 for ch in s if "а" <= ch <= "я" or ch == "ё")
-    if eng_letters > 40 and rus_letters == 0 and (
-        " i " in f" {s} " or s.startswith("i ") or " the " in s
-    ):
-        return True
+    total_letters = eng_letters + sum(1 for ch in s if "а" <= ch <= "я" or ch == "ё")
+    eng_ratio = eng_letters / max(1, total_letters)
+
+    if eng_ratio > 0.7 and eng_letters > 30:
+        for tp in _THINKING_STARTS:
+            if s.startswith(tp) or f". {tp}" in s or f", {tp}" in s:
+                return True
+        if " i " in f" {s} " and ("context" in s or "message" in s or "sent" in s or "asked" in s or "check" in s):
+            return True
+
     return False
 
 

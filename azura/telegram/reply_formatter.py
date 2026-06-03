@@ -124,5 +124,6 @@ async def build_user_prompt(
     return (
         "SITUATION JSON:\n"
         + orjson.dumps(payload, option=orjson.OPT_INDENT_2).decode()
-        + "\n\nReact in character. Output messages only (no JSON, no preamble)."
+        + "\n\nCHECK timeline_tail FIRST: if you already replied to this conversation recently (is_self=true entries at the end), do NOT repeat the same greeting/answer. Continue naturally from where you left off."
+        + "\nReact in character. Output messages only (no JSON, no preamble)."
     )
