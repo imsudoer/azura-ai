@@ -202,6 +202,14 @@ async def _amain() -> int:
     presence_keeper = PresenceKeeper(client, interval_s=20.0)
     await presence_keeper.start()
 
+    _invoke_log = get_logger("tg.invoke")
+    _original_invoke = client.invoke
+    async def _traced_invoke(query, *args, **kwargs):
+        qname = type(query).__name__
+        _invoke_log.info(">>> invoke {} args={}", qname, str(getattr(query, '__dict__', ''))[:200])
+        return await _original_invoke(query, *args, **kwargs)
+    client.invoke = _traced_invoke
+
     from azura.telegram.peer_cache import install_peer_cache, warm_cache
     install_peer_cache(client)
     try:
