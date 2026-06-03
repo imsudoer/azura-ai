@@ -152,6 +152,7 @@ async def _amain() -> int:
         sessionmaker=sm,
         rng=rng,
         tails=tails,
+        tg_client=client,
         on_tail=on_tail,
         on_status=on_status,
     )

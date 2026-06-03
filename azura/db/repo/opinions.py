@@ -70,3 +70,15 @@ class OpinionsRepo:
         q = q.order_by(Opinion.score.desc() if positive else Opinion.score.asc()).limit(n)
         r = await self.s.execute(q)
         return list(r.scalars().all())
+
+    async def close_contacts(self, min_score: int = 10) -> list[int]:
+        """Return user-ids with positive opinion (potential self-initiate targets)."""
+        q = (
+            select(Opinion.target_id)
+            .where(Opinion.target_kind == "user")
+            .where(Opinion.score >= min_score)
+            .order_by(Opinion.score.desc())
+            .limit(30)
+        )
+        r = await self.s.execute(q)
+        return [row[0] for row in r.fetchall()]

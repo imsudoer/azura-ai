@@ -173,9 +173,11 @@ class ArchiveRepo:
         r = await self.s.execute(q)
         return list(reversed(r.scalars().all()))
 
-    async def last_self_ts(self) -> int | None:
-        """Timestamp of the most recent message authored by the persona, across all chats."""
+    async def last_self_ts(self, chat_id: int | None = None) -> int | None:
+        """Timestamp of the most recent self-message. Optionally scoped to a chat."""
         from sqlalchemy import func
         q = select(func.max(ChatArchive.ts)).where(ChatArchive.is_self.is_(True))
+        if chat_id is not None:
+            q = q.where(ChatArchive.chat_id == chat_id)
         r = await self.s.execute(q)
         return r.scalar()
