@@ -84,19 +84,21 @@ class Reader:
             len(queue), top_tier, len(same_tier), choice.chat_id,
         )
 
-        open_prob = 0.0
-        if top_tier == 0:
-            open_prob = 0.55
-        elif top_tier == 1:
-            open_prob = 0.30
-        else:
-            open_prob = 0.12
         unseen = max(0, getattr(choice, "unseen", 0))
-        if unseen >= 5:
-            open_prob += 0.25
-        elif unseen >= 2:
-            open_prob += 0.10
-        open_prob = max(0.0, min(0.95, open_prob))
+        if unseen == 0:
+            open_prob = 0.0
+        else:
+            if top_tier == 0:
+                base = 0.55
+            elif top_tier == 1:
+                base = 0.30
+            else:
+                base = 0.12
+            if unseen >= 5:
+                base += 0.25
+            elif unseen >= 2:
+                base += 0.10
+            open_prob = max(0.0, min(0.95, base))
 
         if not self.rng.chance(open_prob):
             log.info(
