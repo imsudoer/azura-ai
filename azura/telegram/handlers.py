@@ -530,6 +530,7 @@ class Dispatcher:
                 mood=mood, clock=clk,
                 in_private=in_private, urgency=urgency(trig),
                 reply_to=msg.id if not in_private else None,
+                heat=_heat,
             )
             try:
                 await client.read_chat_history(msg.chat.id)

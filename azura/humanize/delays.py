@@ -37,6 +37,7 @@ def reply_delay(
     text_len: int,
     urgency: float = 0.0,
     in_private: bool = True,
+    heat: float = 0.0,
 ) -> DelayPlan:
     """Estimate human-shaped pre-read, pre-type, typing burst and after-send delays."""
     s = get_settings()
@@ -57,14 +58,22 @@ def reply_delay(
         base_pre *= 1.3
     base_pre = max(s.humanize_min_reply_delay_s, min(s.humanize_max_reply_delay_s, base_pre))
 
+    if heat > 0.4:
+        heat_speedup = 1.0 - heat * 0.6
+        base_pre *= heat_speedup
+
     pre_type = rng.uniform(0.4, 1.6) * mul
+    if heat > 0.4:
+        pre_type *= heat_speedup
 
     cps = 3.5 + t.get("conscientiousness", 0.5) * 1.5 - mood.fatigue * 1.0
+    if heat > 0.5:
+        cps += 2.0
     cps = max(1.5, cps)
     type_burst = max(0.8, text_len / cps + rng.uniform(-0.8, 1.2))
     type_burst *= mul
 
-    after = rng.uniform(0.6, 2.4)
+    after = rng.uniform(0.3, 1.2) if heat > 0.5 else rng.uniform(0.6, 2.4)
     return DelayPlan(
         pre_read_s=round(base_pre, 2),
         pre_type_s=round(pre_type, 2),

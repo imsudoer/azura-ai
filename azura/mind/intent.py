@@ -91,12 +91,17 @@ class IntentEngine:
         read_only = self.p.social.read_no_reply_chance + max(0.0, mood.fatigue - 0.6) * 0.3
         score = max(0.0, min(1.0, base))
 
-        if self.rng.chance(ghost) and not trigger.reply_to_self and not in_private:
-            return ReplyDecision("ignore", score, "ghost")
-        if self.rng.chance(read_only) and not trigger.reply_to_self and u_urg < 0.5:
-            return ReplyDecision("read_only", score, "read, didn't feel like answering")
-        if mood.fatigue > 0.85 and not trigger.reply_to_self:
-            return ReplyDecision("later", score, "too tired")
+        in_hot_dialog = heat > 0.4 and (in_private or trigger.reply_to_self)
+
+        if not in_hot_dialog:
+            if self.rng.chance(ghost) and not trigger.reply_to_self and not in_private:
+                return ReplyDecision("ignore", score, "ghost")
+            if self.rng.chance(read_only) and not trigger.reply_to_self and u_urg < 0.5:
+                return ReplyDecision("read_only", score, "read, didn't feel like answering")
+            if mood.fatigue > 0.85 and not trigger.reply_to_self:
+                return ReplyDecision("later", score, "too tired")
+        if in_hot_dialog and score > 0.45:
+            return ReplyDecision("reply", score, "hot dialog")
         if self.rng.chance(score):
             return ReplyDecision("reply", score, "engaged")
         if u_urg > 0.3 and self.rng.chance(0.4 + t["playfulness"] * 0.3):

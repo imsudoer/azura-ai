@@ -65,6 +65,7 @@ class Sender:
         urgency: float = 0.2,
         reply_to: int | None = None,
         do_split: bool = True,
+        heat: float = 0.0,
     ) -> SendResult:
         """Run the whole humanize pipeline for one outgoing burst."""
         msgs = [m for m in (messages or []) if isinstance(m, str) and m.strip()]
@@ -91,6 +92,7 @@ class Sender:
         plan = reply_delay(
             persona=self.p, mood=mood, clock=clock, rng=self.rng,
             text_len=total_len, urgency=urgency, in_private=in_private,
+            heat=heat,
         )
 
         await self.bp.gate(chat_id)
