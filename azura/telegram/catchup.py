@@ -59,6 +59,7 @@ async def catchup_unseen(
             log.info("catchup skip: sleep window")
             return 0
 
+        from azura.constants import ChatKind
         candidates = []
         for c in chats:
             if c.importance <= -100:
@@ -67,6 +68,9 @@ async def catchup_unseen(
             if unseen == 0:
                 continue
             heat = await chat_heat(r, c.id)
+            is_private = c.kind in (ChatKind.PRIVATE.value, ChatKind.BOT.value)
+            if not is_private and heat < 0.5:
+                continue
             candidates.append((c, unseen, heat))
 
         candidates.sort(key=lambda x: (-x[2], -x[1]))
@@ -91,15 +95,16 @@ async def catchup_unseen(
             )
 
             try:
-                msgs = await client.get_chat_history(c.id, limit=1)
                 latest = None
-                async for m_msg in msgs:
+                async for m_msg in client.get_chat_history(c.id, limit=1):
                     latest = m_msg
                     break
                 if latest and not latest.outgoing:
                     await coalescer.submit(c.id, latest)
                     queued += 1
                     log.info("catchup QUEUED chat={} msg_id={}", c.id, latest.id)
+                elif latest:
+                    log.debug("catchup skip chat={} (last msg is outgoing)", c.id)
             except Exception:
                 log.exception("catchup fetch failed chat={}", c.id)
 
