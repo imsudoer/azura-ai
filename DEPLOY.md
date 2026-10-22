@@ -50,7 +50,7 @@ SH
 sudo -u azura -H cp /opt/azura/app/.env.example /opt/azura/app/.env
 sudo -u azura -H nano /opt/azura/app/.env
 # fill ONLYSQ_API_KEY=...
-# adjust OPERATOR_ID if needed (default 5624858175)
+# adjust OPERATOR_ID if needed (set your Telegram user ID)
 # adjust OPERATOR_SECRET to a non-trivial string
 sudo chmod 600 /opt/azura/app/.env
 ```

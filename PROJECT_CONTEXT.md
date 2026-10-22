@@ -20,7 +20,7 @@ A Telegram **userbot** behaving like a real human, not a bot. It must:
 - Live on a real day cycle: sleep, occasional brief wakeups; never online 24/7.
 - Maintain proximity tiers (stranger / acquaintance / friend / close) and apply them to tone and reply thresholds.
 - Have conflict dynamics, grudges, forgiveness.
-- Have an **operator** channel (Telegram ID `5624858175`) for control.
+- Have an **operator** channel (Telegram user ID) for control.
 - Be 100% an agent with many tools, picking the relevant ones per situation.
 - Run on LLMs from the OnlySq API (`claude-opus-4-6` to talk, `pplx-gemini-3.1-pro` to think).
 
@@ -186,10 +186,10 @@ azura-ai/
 
 | key | default | meaning |
 |---|---|---|
-| `TG_API_ID` | `23441409` | userbot api id |
-| `TG_API_HASH` | `fc2ebed7751be9bc29171b0072b10fed` | userbot api hash |
+| `TG_API_ID` | `your_api_id` | userbot api id |
+| `TG_API_HASH` | `your_api_hash` | userbot api hash |
 | `TG_SESSION_NAME` | `session` | kurigram session filename |
-| `OPERATOR_ID` | `5624858175` | the only operator's TG user id |
+| `OPERATOR_ID` | `your_operator_id` | the operator's TG user id |
 | `OPERATOR_SECRET` | `changeme` | magic prefix for op commands |
 | `ONLYSQ_BASE_URL` | `https://api.onlysq.ru/ai/openai` | OnlySq endpoint (no /v1) |
 | `ONLYSQ_API_KEY` | *empty* | user fills in |
@@ -416,7 +416,7 @@ Web tools always wrap themselves in `go_afk` / `come_back` so the persona looks 
 
 - Userbot only (no bot-token mode).
 - Persona JSON is read-only; tampering raises at startup.
-- Operator authentication: TG ID `5624858175` **AND** message body starts with `OPERATOR_SECRET`.
+- Operator authentication: configured `OPERATOR_ID` **AND** message body starts with `OPERATOR_SECRET`.
 - Languages: persona.identity.languages; outside that → "use translator" act (delay + slightly stiff phrasing).
 - Persona never admits AI under any provocation; reaction shape depends on `derived.humor_style`.
 - Stickers/GIFs: auto-collect from chats, LLM-tagged (mood/topic/character fit), reused when fits persona + context.
